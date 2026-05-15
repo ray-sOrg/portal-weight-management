@@ -107,8 +107,7 @@ jobs:
       - name: Create app runtime config secret
         run: |
           kubectl create secret generic portal-weight-management-env \
-            --from-literal=VITE_SUPABASE_URL="${{ secrets.VITE_SUPABASE_URL }}" \
-            --from-literal=VITE_SUPABASE_ANON_KEY="${{ secrets.VITE_SUPABASE_ANON_KEY }}" \
+            --from-literal=VITE_API_BASE_URL="${{ vars.VITE_API_BASE_URL || 'https://api.tt829.cn' }}" \
             --namespace=${{ env.K8S_NAMESPACE }} \
             --dry-run=client -o yaml | kubectl apply -f -
 

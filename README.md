@@ -7,7 +7,7 @@
 - Bun + Vite 8 + React 19 + TypeScript
 - Tailwind CSS v4 + shadcn/ui 风格组件
 - TanStack Router + TanStack Query
-- Supabase Auth + Postgres + RLS
+- server-console API + JWT Cookie 登录态
 - Recharts + Vitest
 
 ## 开发
@@ -18,14 +18,23 @@ cp .env.example .env.local
 bun run dev
 ```
 
-没有配置 Supabase 环境变量时，应用会使用内置演示数据，方便先查看界面和交互。
+未登录或 API 不可用时，应用会使用内置演示数据，方便先查看界面和交互。
 
-## Supabase
+## API
 
-1. 创建 Supabase 项目。
-2. 在 `.env.local` 填入 `VITE_SUPABASE_URL` 和 `VITE_SUPABASE_ANON_KEY`。
-3. 在 Supabase SQL editor 或 CLI 中执行 `supabase/migrations/20260515000000_initial_schema.sql`。
-4. 开启邮箱验证码登录。
+后端使用同级项目 `server-console` 提供的接口，默认 API 地址：
+
+```bash
+VITE_API_BASE_URL=https://api.tt829.cn
+```
+
+当前已接入：
+
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/user/login/info`
+- `GET /api/weight/records/all`
+- `POST /api/weight/record/add`
 
 ## 常用命令
 
@@ -50,8 +59,10 @@ https://weight.tt829.cn
 - `TCR_USERNAME`
 - `TCR_PASSWORD`
 - `KUBECONFIG`
-- `VITE_SUPABASE_URL`（可选；部署时写入 Kubernetes Secret，不填则使用演示数据）
-- `VITE_SUPABASE_ANON_KEY`（可选；部署时写入 Kubernetes Secret，不填则使用演示数据）
+
+可选 GitHub Variables：
+
+- `VITE_API_BASE_URL`（默认 `https://api.tt829.cn`）
 
 如果要换域名，修改 `deployment.yaml` 里的 `weight.tt829.cn`。
 

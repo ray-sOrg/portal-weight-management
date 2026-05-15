@@ -7,7 +7,6 @@ json_escape() {
 
 cat > /usr/share/nginx/html/config.js <<EOF
 window.__APP_CONFIG__ = {
-  VITE_SUPABASE_URL: "$(json_escape "${VITE_SUPABASE_URL:-}")",
-  VITE_SUPABASE_ANON_KEY: "$(json_escape "${VITE_SUPABASE_ANON_KEY:-}")",
+  VITE_API_BASE_URL: "$(json_escape "${VITE_API_BASE_URL:-https://api.tt829.cn}")",
 }
 EOF

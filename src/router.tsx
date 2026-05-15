@@ -20,6 +20,7 @@ import {
   Settings,
   Users,
 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { FormEvent, type ReactNode, useMemo, useState } from 'react'
 import { BmiChart, HouseholdCompareChart, WeightTrendChart } from './components/charts'
 import { Button, EmptyState, Input, Label, Panel, Stat } from './components/ui'
@@ -35,7 +36,13 @@ import {
   sortEntries,
 } from './lib/metrics'
 import { useAddWeightEntry, useAppData, useUpsertPerson } from './lib/queries'
-import { isSupabaseConfigured, supabase } from './lib/supabase'
+import {
+  apiBaseUrl,
+  loginWithPassword,
+  logout,
+  readProfileHeight,
+  writeProfileHeight,
+} from './lib/server-api'
 import type { TrackedPerson } from './lib/types'
 import { formatFullDate, formatKg, todayISO } from './lib/utils'
 
@@ -446,8 +453,11 @@ function HouseholdPage() {
 
 function SettingsPage() {
   const { data } = useAppData()
-  const [email, setEmail] = useState('')
-  const [sent, setSent] = useState(false)
+  const queryClient = useQueryClient()
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [heightCm, setHeightCm] = useState(String(readProfileHeight()))
+  const [authMessage, setAuthMessage] = useState('')
   const csv = useMemo(
     () => (data ? exportEntriesCsv(data.entries, data.people) : ''),
     [data],
@@ -455,27 +465,77 @@ function SettingsPage() {
 
   async function signIn(event: FormEvent) {
     event.preventDefault()
-    if (!supabase || !email) return
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin },
-    })
-    if (error) throw error
-    setSent(true)
+    try {
+      await loginWithPassword(username, password)
+      setAuthMessage('登录成功，已切换到 server-console 数据。')
+      setPassword('')
+      await queryClient.invalidateQueries({ queryKey: ['app-data'] })
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : '登录失败')
+    }
+  }
+
+  async function signOut() {
+    await logout().catch(() => undefined)
+    setAuthMessage('已退出登录，页面会回到演示数据。')
+    await queryClient.invalidateQueries({ queryKey: ['app-data'] })
+  }
+
+  function saveHeight(event: FormEvent) {
+    event.preventDefault()
+    const nextHeight = Number(heightCm)
+    if (!Number.isFinite(nextHeight) || nextHeight < 80 || nextHeight > 250) {
+      setAuthMessage('身高需要在 80-250 cm 之间。')
+      return
+    }
+    writeProfileHeight(nextHeight)
+    setAuthMessage('身高已保存，BMI 会按新身高计算。')
+    void queryClient.invalidateQueries({ queryKey: ['app-data'] })
   }
 
   return (
     <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
       <Panel>
-        <PageSectionTitle title="登录与同步" body={isSupabaseConfigured ? '使用邮箱验证码登录 Supabase。' : '当前未配置 Supabase，正在使用演示数据。'} />
-        <form className="mt-5 flex flex-col gap-3 sm:flex-row" onSubmit={signIn}>
-          <Input type="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} disabled={!isSupabaseConfigured} />
-          <Button type="submit" disabled={!isSupabaseConfigured}>
+        <PageSectionTitle title="登录与同步" body={`通过 server-console API 同步体重记录：${apiBaseUrl}`} />
+        <form className="mt-5 grid gap-3" onSubmit={signIn}>
+          <Input
+            autoComplete="username"
+            placeholder="用户名"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+          />
+          <Input
+            autoComplete="current-password"
+            placeholder="密码"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <Button type="submit" disabled={!username || !password}>
             <LogIn size={16} />
-            发送验证码
+              登录
+            </Button>
+            <Button type="button" variant="secondary" onClick={signOut}>
+              退出
+            </Button>
+          </div>
+        </form>
+        {authMessage ? <p className="mt-3 text-sm text-sage-dark">{authMessage}</p> : null}
+      </Panel>
+      <Panel>
+        <PageSectionTitle title="个人参数" body="后端当前只存体重记录；身高先保存在本机，用于 BMI 计算。" />
+        <form className="mt-5 flex flex-col gap-3 sm:flex-row" onSubmit={saveHeight}>
+          <Input
+            inputMode="numeric"
+            placeholder="170"
+            value={heightCm}
+            onChange={(event) => setHeightCm(event.target.value)}
+          />
+          <Button type="submit">
+            保存身高
           </Button>
         </form>
-        {sent ? <p className="mt-3 text-sm text-sage-dark">验证码链接已发送，请查看邮箱。</p> : null}
       </Panel>
       <Panel>
         <PageSectionTitle title="数据导出" body="导出家庭空间内所有体重记录，便于备份或迁移。" />
