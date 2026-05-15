@@ -15,9 +15,11 @@ import {
   Download,
   Home,
   LogIn,
+  LogOut,
   Plus,
   Scale,
   Settings,
+  UserRoundCheck,
   Users,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -445,6 +447,8 @@ function HouseholdPage() {
 function SettingsPage() {
   const { data, error } = useAppData()
   const queryClient = useQueryClient()
+  const isSignedIn = Boolean(data && !error)
+  const currentPerson = data?.people[0]
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [heightCm, setHeightCm] = useState(String(readProfileHeight()))
@@ -458,7 +462,8 @@ function SettingsPage() {
     event.preventDefault()
     try {
       await loginWithPassword(username, password)
-      setAuthMessage('登录成功，数据已同步。')
+      setAuthMessage('登录成功。')
+      setUsername('')
       setPassword('')
       await queryClient.invalidateQueries({ queryKey: ['app-data'] })
     } catch (error) {
@@ -487,31 +492,47 @@ function SettingsPage() {
   return (
     <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
       <Panel>
-        <PageSectionTitle title="登录与同步" body={error ? '登录后开始记录和同步体重变化。' : '当前账号已连接，可以同步体重记录。'} />
-        <form className="mt-5 grid gap-3" onSubmit={signIn}>
-          <Input
-            autoComplete="username"
-            placeholder="用户名"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-          />
-          <Input
-            autoComplete="current-password"
-            placeholder="密码"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-          <div className="grid grid-cols-2 gap-3">
-            <Button type="submit" disabled={!username || !password}>
-            <LogIn size={16} />
-              登录
-            </Button>
-            <Button type="button" variant="secondary" onClick={signOut}>
-              退出
+        <PageSectionTitle
+          title="账号"
+          body={isSignedIn ? '体重记录会保存在你的账号下。' : '登录后开始记录体重，历史数据会跟随账号保存。'}
+        />
+        {isSignedIn ? (
+          <div className="mt-5 space-y-4">
+            <div className="flex items-center gap-3 rounded-md border border-line bg-white px-4 py-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-mint text-sage-dark">
+                <UserRoundCheck size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-ink">{currentPerson?.name ?? '已登录账号'}</p>
+                <p className="text-xs text-sage">{data?.entries.length ?? 0} 条体重记录</p>
+              </div>
+            </div>
+            <Button type="button" variant="secondary" className="w-full" onClick={signOut}>
+              <LogOut size={16} />
+              退出登录
             </Button>
           </div>
-        </form>
+        ) : (
+          <form className="mt-5 grid gap-3" onSubmit={signIn}>
+            <Input
+              autoComplete="username"
+              placeholder="用户名"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+            />
+            <Input
+              autoComplete="current-password"
+              placeholder="密码"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+            <Button type="submit" disabled={!username || !password}>
+              <LogIn size={16} />
+              登录
+            </Button>
+          </form>
+        )}
         {authMessage ? <p className="mt-3 text-sm text-sage-dark">{authMessage}</p> : null}
       </Panel>
       <Panel>
