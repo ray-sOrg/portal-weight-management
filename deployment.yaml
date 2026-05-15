@@ -24,6 +24,10 @@ spec:
       containers:
         - name: portal-weight-management
           image: __IMAGE_NAME__:__IMAGE_TAG__
+          envFrom:
+            - secretRef:
+                name: portal-weight-management-env
+                optional: true
           ports:
             - containerPort: 80
           readinessProbe:

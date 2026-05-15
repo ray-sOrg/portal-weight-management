@@ -50,7 +50,14 @@ https://weight.tt829.cn
 - `TCR_USERNAME`
 - `TCR_PASSWORD`
 - `KUBECONFIG`
-- `VITE_SUPABASE_URL`（可选；不填则使用演示数据）
-- `VITE_SUPABASE_ANON_KEY`（可选；不填则使用演示数据）
+- `VITE_SUPABASE_URL`（可选；部署时写入 Kubernetes Secret，不填则使用演示数据）
+- `VITE_SUPABASE_ANON_KEY`（可选；部署时写入 Kubernetes Secret，不填则使用演示数据）
 
 如果要换域名，修改 `deployment.yaml` 里的 `weight.tt829.cn`。
+
+Docker 构建同样使用 Bun：
+
+```bash
+bun install --frozen-lockfile
+bun run build
+```
