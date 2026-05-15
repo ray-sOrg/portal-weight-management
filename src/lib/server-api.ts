@@ -122,14 +122,18 @@ function mapWeightRecord(
 }
 
 async function request<T>(path: string, init: RequestInit = {}) {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), 8_000)
+
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     credentials: 'include',
+    signal: init.signal ?? controller.signal,
     headers: {
       'Content-Type': 'application/json',
       ...init.headers,
     },
-  })
+  }).finally(() => window.clearTimeout(timeoutId))
 
   if (!response.ok) {
     throw new Error(`API 请求失败：${response.status}`)

@@ -35,9 +35,8 @@ import {
   getWeightChange,
   sortEntries,
 } from './lib/metrics'
-import { useAddWeightEntry, useAppData, useUpsertPerson } from './lib/queries'
+import { useAddWeightEntry, useAppData } from './lib/queries'
 import {
-  apiBaseUrl,
   loginWithPassword,
   logout,
   readProfileHeight,
@@ -192,9 +191,10 @@ function PersonPicker({
 }
 
 function DashboardPage() {
-  const { data, isLoading, person, entries, goal, setPersonId } = useSelectedPerson()
+  const { data, error, isLoading, person, entries, goal, setPersonId } = useSelectedPerson()
   if (isLoading) return <ScreenLoading />
-  if (!data || !person) return <EmptyState title="还没有家庭数据" body="登录后创建家庭，即可开始记录体重。" />
+  if (error) return <LoginPrompt />
+  if (!data || !person) return <LoginPrompt />
 
   const latest = getLatestEntry(entries)
   const bmi = latest ? calculateBmi(latest.weight_kg, person.height_cm) : 0
@@ -274,7 +274,7 @@ function DashboardPage() {
 }
 
 function EntriesPage() {
-  const { data, isLoading, person, entries, setPersonId } = useSelectedPerson()
+  const { data, error, isLoading, person, entries, setPersonId } = useSelectedPerson()
   const addEntry = useAddWeightEntry()
   const [form, setForm] = useState({
     measuredOn: todayISO(),
@@ -283,7 +283,8 @@ function EntriesPage() {
   })
 
   if (isLoading) return <ScreenLoading />
-  if (!data || !person) return null
+  if (error) return <LoginPrompt />
+  if (!data || !person) return <LoginPrompt />
   const selectedPerson = person
 
   function onSubmit(event: FormEvent) {
@@ -340,14 +341,22 @@ function EntriesPage() {
               </tr>
             </thead>
             <tbody>
-              {sortEntries(entries).reverse().map((entry) => (
-                <tr key={entry.id} className="border-t border-line">
-                  <td className="px-3 py-3 sm:px-4">{formatFullDate(entry.measured_on)}</td>
-                  <td className="px-3 py-3 tabular-nums sm:px-4">{formatKg(entry.weight_kg)}</td>
-                  <td className="px-3 py-3 tabular-nums sm:px-4">{calculateBmi(entry.weight_kg, selectedPerson.height_cm).toFixed(1)}</td>
-                  <td className="hidden px-3 py-3 text-sage sm:table-cell sm:px-4">{entry.note ?? '—'}</td>
+              {entries.length ? (
+                sortEntries(entries).reverse().map((entry) => (
+                  <tr key={entry.id} className="border-t border-line">
+                    <td className="px-3 py-3 sm:px-4">{formatFullDate(entry.measured_on)}</td>
+                    <td className="px-3 py-3 tabular-nums sm:px-4">{formatKg(entry.weight_kg)}</td>
+                    <td className="px-3 py-3 tabular-nums sm:px-4">{calculateBmi(entry.weight_kg, selectedPerson.height_cm).toFixed(1)}</td>
+                    <td className="hidden px-3 py-3 text-sage sm:table-cell sm:px-4">{entry.note ?? '—'}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr className="border-t border-line">
+                  <td className="px-3 py-8 text-center text-sage sm:px-4" colSpan={4}>
+                    还没有记录，保存第一条体重后这里会显示历史。
+                  </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
@@ -357,9 +366,10 @@ function EntriesPage() {
 }
 
 function ReportsPage() {
-  const { data, isLoading, person, entries, setPersonId } = useSelectedPerson()
+  const { data, error, isLoading, person, entries, setPersonId } = useSelectedPerson()
   if (isLoading) return <ScreenLoading />
-  if (!data || !person) return null
+  if (error) return <LoginPrompt />
+  if (!data || !person) return <LoginPrompt />
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -372,11 +382,11 @@ function ReportsPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel>
           <PageSectionTitle title="体重趋势" body="原始记录与移动均值" />
-          <WeightTrendChart person={person} entries={entries} />
+          {entries.length ? <WeightTrendChart person={person} entries={entries} /> : <EmptyState title="暂无趋势" body="添加体重记录后，这里会显示变化曲线。" />}
         </Panel>
         <Panel>
           <PageSectionTitle title="BMI 区间变化" body="基于成员身高自动计算" />
-          <BmiChart person={person} entries={entries} />
+          {entries.length ? <BmiChart person={person} entries={entries} /> : <EmptyState title="暂无 BMI 数据" body="BMI 会根据体重和身高自动计算。" />}
         </Panel>
       </div>
       <Panel>
@@ -388,29 +398,10 @@ function ReportsPage() {
 }
 
 function HouseholdPage() {
-  const { data, isLoading } = useAppData()
-  const upsertPerson = useUpsertPerson()
-  const [draft, setDraft] = useState({ name: '', height: '' })
+  const { data, error, isLoading } = useAppData()
   if (isLoading) return <ScreenLoading />
-  if (!data) return null
-  const householdId = data.household.id
-
-  function addPerson(event: FormEvent) {
-    event.preventDefault()
-    const height = Number(draft.height)
-    if (!draft.name || !Number.isFinite(height)) return
-    upsertPerson.mutate({
-      id: crypto.randomUUID(),
-      household_id: householdId,
-      profile_id: null,
-      name: draft.name,
-      height_cm: height,
-      birth_year: null,
-      created_by: 'demo-user',
-      created_at: new Date().toISOString(),
-    })
-    setDraft({ name: '', height: '' })
-  }
+  if (error) return <LoginPrompt />
+  if (!data) return <LoginPrompt />
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1.15fr_.85fr] lg:gap-6">
@@ -431,28 +422,28 @@ function HouseholdPage() {
         </div>
       </Panel>
       <Panel>
-        <PageSectionTitle title="新增成员" body="首版支持 owner/member 两级权限；演示模式下成员保存在当前页面状态。" />
-        <form className="mt-5 space-y-4" onSubmit={addPerson}>
+        <PageSectionTitle title="成员管理" body="后端当前提供个人体重接口；家庭成员接口接入后会在这里开放。" />
+        <div className="mt-5 space-y-4 opacity-60">
           <div className="space-y-2">
             <Label>姓名</Label>
-            <Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="家庭成员" />
+            <Input disabled placeholder="家庭成员" />
           </div>
           <div className="space-y-2">
             <Label>身高 cm</Label>
-            <Input inputMode="numeric" value={draft.height} onChange={(event) => setDraft({ ...draft, height: event.target.value })} placeholder="170" />
+            <Input disabled inputMode="numeric" placeholder="170" />
           </div>
-          <Button type="submit" className="w-full">
+          <Button type="submit" className="w-full" disabled>
             <Users size={16} />
-            添加成员
+            等待后端接口
           </Button>
-        </form>
+        </div>
       </Panel>
     </div>
   )
 }
 
 function SettingsPage() {
-  const { data } = useAppData()
+  const { data, error } = useAppData()
   const queryClient = useQueryClient()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -467,7 +458,7 @@ function SettingsPage() {
     event.preventDefault()
     try {
       await loginWithPassword(username, password)
-      setAuthMessage('登录成功，已切换到 server-console 数据。')
+      setAuthMessage('登录成功，数据已同步。')
       setPassword('')
       await queryClient.invalidateQueries({ queryKey: ['app-data'] })
     } catch (error) {
@@ -477,7 +468,7 @@ function SettingsPage() {
 
   async function signOut() {
     await logout().catch(() => undefined)
-    setAuthMessage('已退出登录，页面会回到演示数据。')
+    setAuthMessage('已退出登录。')
     await queryClient.invalidateQueries({ queryKey: ['app-data'] })
   }
 
@@ -496,7 +487,7 @@ function SettingsPage() {
   return (
     <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
       <Panel>
-        <PageSectionTitle title="登录与同步" body={`通过 server-console API 同步体重记录：${apiBaseUrl}`} />
+        <PageSectionTitle title="登录与同步" body={error ? '登录后开始记录和同步体重变化。' : '当前账号已连接，可以同步体重记录。'} />
         <form className="mt-5 grid gap-3" onSubmit={signIn}>
           <Input
             autoComplete="username"
@@ -586,6 +577,26 @@ function ScreenLoading() {
   return (
     <Panel>
       <div className="h-80 animate-pulse rounded-lg bg-mist" />
+    </Panel>
+  )
+}
+
+function LoginPrompt() {
+  return (
+    <Panel className="mx-auto max-w-xl">
+      <div className="py-6 text-center">
+        <p className="font-display text-3xl font-semibold text-ink">先登录，再记录</p>
+        <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-sage">
+          体重数据会同步到你的账号。登录后可以查看趋势、历史记录和导出数据。
+        </p>
+        <Link
+          to="/settings"
+          className="mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-md bg-sage-dark px-5 text-sm font-medium text-white shadow-sm"
+        >
+          <LogIn size={16} />
+          去登录
+        </Link>
+      </div>
     </Panel>
   )
 }

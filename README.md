@@ -7,7 +7,7 @@
 - Bun + Vite 8 + React 19 + TypeScript
 - Tailwind CSS v4 + shadcn/ui 风格组件
 - TanStack Router + TanStack Query
-- server-console API + JWT Cookie 登录态
+- 后端同步 + JWT Cookie 登录态
 - Recharts + Vitest
 
 ## 开发
@@ -18,11 +18,11 @@ cp .env.example .env.local
 bun run dev
 ```
 
-未登录或 API 不可用时，应用会使用内置演示数据，方便先查看界面和交互。
+登录后应用会从后端同步真实体重记录；未登录时只显示登录引导。
 
-## API
+## 后端
 
-后端使用同级项目 `server-console` 提供的接口，默认 API 地址：
+后端使用同级项目 `server-console` 提供的接口。开发时可在 `.env.local` 中配置：
 
 ```bash
 VITE_API_BASE_URL=https://api.tt829.cn
@@ -62,7 +62,7 @@ https://weight.tt829.cn
 
 可选 GitHub Variables：
 
-- `VITE_API_BASE_URL`（默认 `https://api.tt829.cn`）
+- `VITE_API_BASE_URL`
 
 如果要换域名，修改 `deployment.yaml` 里的 `weight.tt829.cn`。
 
