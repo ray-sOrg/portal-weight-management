@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portal-weight-management-deployment
+  labels:
+    app: portal-weight-management
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: portal-weight-management
+  template:
+    metadata:
+      labels:
+        app: portal-weight-management
+    spec:
+      imagePullSecrets:
+        - name: tencent-tcr-secret
+      containers:
+        - name: portal-weight-management
+          image: __IMAGE_NAME__:__IMAGE_TAG__
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portal-weight-management-service
+spec:
+  selector:
+    app: portal-weight-management
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: portal-weight-management-ingress
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  tls:
+    - hosts:
+        - weight.tt829.cn
+      secretName: portal-weight-management-tls
+  rules:
+    - host: weight.tt829.cn
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: portal-weight-management-service
+                port:
+                  number: 80

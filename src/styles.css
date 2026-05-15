@@ -1,0 +1,60 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans:
+    'Aptos', 'Satoshi', 'PingFang SC', 'Microsoft YaHei', ui-sans-serif,
+    system-ui, sans-serif;
+  --font-display:
+    'Newsreader', 'Aptos Display', 'PingFang SC', ui-serif, Georgia, serif;
+  --color-ink: #19201f;
+  --color-mist: #f6f8f5;
+  --color-paper: #ffffff;
+  --color-line: #dfe6e1;
+  --color-sage: #6f8f7c;
+  --color-sage-dark: #355e4d;
+  --color-mint: #b7ead9;
+  --color-coral: #f16f5b;
+  --color-gold: #caa760;
+}
+
+:root {
+  color: var(--color-ink);
+  background: #f7faf7;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    linear-gradient(120deg, rgba(183, 234, 217, 0.28), transparent 34rem),
+    radial-gradient(circle at 86% 10%, rgba(202, 167, 96, 0.18), transparent 24rem),
+    #f7faf7;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: rgba(111, 143, 124, 0.24);
+}
+
+.recharts-wrapper * {
+  outline: none;
+}
