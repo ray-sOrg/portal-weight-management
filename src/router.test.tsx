@@ -1,10 +1,23 @@
 import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { router } from './router'
 
+vi.mock('./lib/server-api', () => ({
+  addServerWeightEntry: vi.fn(),
+  loadWeightAppData: vi.fn(() => Promise.reject(new Error('未登录'))),
+  loginWithPassword: vi.fn(),
+  logout: vi.fn(),
+  readProfileHeight: vi.fn(() => 170),
+  writeProfileHeight: vi.fn(),
+}))
+
 describe('router app shell', () => {
+  beforeEach(() => {
+    window.history.pushState({}, '', '/')
+  })
+
   it('renders login-first dashboard state', async () => {
     const queryClient = new QueryClient({
       defaultOptions: {
