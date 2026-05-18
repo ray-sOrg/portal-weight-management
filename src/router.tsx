@@ -405,9 +405,9 @@ function HouseholdPage() {
   if (!data) return <LoginPrompt />
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1.15fr_.85fr] lg:gap-6">
+    <div className="grid gap-4">
       <Panel>
-        <PageSectionTitle title={data.household.name} body="成员资料用于 BMI、目标和报表计算。" />
+        <PageSectionTitle title={data.household.name} body="当前先支持记录本人；姓名、身高和出生日期可在设置中维护。" />
         <div className="mt-5 grid gap-3">
           {data.people.map((person) => (
             <div key={person.id} className="flex items-center justify-between rounded-lg border border-line bg-white p-4">
@@ -421,23 +421,12 @@ function HouseholdPage() {
             </div>
           ))}
         </div>
-      </Panel>
-      <Panel>
-        <PageSectionTitle title="成员管理" body="后端当前提供个人体重接口；家庭成员接口接入后会在这里开放。" />
-        <div className="mt-5 space-y-4 opacity-60">
-          <div className="space-y-2">
-            <Label>姓名</Label>
-            <Input disabled placeholder="家庭成员" />
-          </div>
-          <div className="space-y-2">
-            <Label>身高 cm</Label>
-            <Input disabled inputMode="numeric" placeholder="170" />
-          </div>
-          <Button type="submit" className="w-full" disabled>
-            <Users size={16} />
-            等待后端接口
-          </Button>
-        </div>
+        <Link
+          to="/settings"
+          className="mt-4 inline-flex h-10 items-center justify-center rounded-md border border-line bg-white px-4 text-sm font-medium text-ink transition hover:border-sage hover:bg-mist"
+        >
+          编辑个人资料
+        </Link>
       </Panel>
     </div>
   )
