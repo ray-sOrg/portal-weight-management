@@ -41,8 +41,7 @@ import { useAddWeightEntry, useAppData } from './lib/queries'
 import {
   loginWithPassword,
   logout,
-  readProfileHeight,
-  writeProfileHeight,
+  updateProfileHeight,
 } from './lib/server-api'
 import type { TrackedPerson } from './lib/types'
 import { formatFullDate, formatKg, todayISO } from './lib/utils'
@@ -451,9 +450,10 @@ function SettingsPage() {
   const currentPerson = data?.people[0]
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [heightCm, setHeightCm] = useState(String(readProfileHeight()))
+  const [heightCm, setHeightCm] = useState('')
   const [authMessage, setAuthMessage] = useState('')
   const [profileMessage, setProfileMessage] = useState('')
+  const effectiveHeightCm = heightCm || String(currentPerson?.height_cm ?? 170)
   const csv = useMemo(
     () => (data ? exportEntriesCsv(data.entries, data.people) : ''),
     [data],
@@ -465,6 +465,7 @@ function SettingsPage() {
       await loginWithPassword(username, password)
       setAuthMessage('登录成功。')
       setProfileMessage('')
+      setHeightCm('')
       setUsername('')
       setPassword('')
       await queryClient.invalidateQueries({ queryKey: ['app-data'] })
@@ -477,19 +478,30 @@ function SettingsPage() {
     await logout().catch(() => undefined)
     setAuthMessage('已退出登录。')
     setProfileMessage('')
+    setHeightCm('')
     await queryClient.invalidateQueries({ queryKey: ['app-data'] })
   }
 
   function saveHeight(event: FormEvent) {
     event.preventDefault()
-    const nextHeight = Number(heightCm)
+    if (!isSignedIn) {
+      setProfileMessage('请先登录后再保存个人参数。')
+      return
+    }
+    const nextHeight = Number(effectiveHeightCm)
     if (!Number.isFinite(nextHeight) || nextHeight < 80 || nextHeight > 250) {
       setProfileMessage('身高需要在 80-250 cm 之间。')
       return
     }
-    writeProfileHeight(nextHeight)
-    setProfileMessage('身高已保存，BMI 会按新身高计算。')
-    void queryClient.invalidateQueries({ queryKey: ['app-data'] })
+    updateProfileHeight(nextHeight)
+      .then(() => {
+        setHeightCm(String(nextHeight))
+        setProfileMessage('身高已保存到账号，BMI 会按新身高计算。')
+        void queryClient.invalidateQueries({ queryKey: ['app-data'] })
+      })
+      .catch((error: unknown) => {
+        setProfileMessage(error instanceof Error ? error.message : '身高保存失败')
+      })
   }
 
   return (
@@ -539,18 +551,25 @@ function SettingsPage() {
         {authMessage ? <p className="mt-3 text-sm text-sage-dark">{authMessage}</p> : null}
       </Panel>
       <Panel>
-        <PageSectionTitle title="个人参数" body="后端当前只存体重记录；身高先保存在本机，用于 BMI 计算。" />
-        <form className="mt-5 flex flex-col gap-3 sm:flex-row" onSubmit={saveHeight}>
-          <Input
-            inputMode="numeric"
-            placeholder="170"
-            value={heightCm}
-            onChange={(event) => setHeightCm(event.target.value)}
-          />
-          <Button type="submit">
-            保存身高
-          </Button>
-        </form>
+        <PageSectionTitle
+          title="个人参数"
+          body={isSignedIn ? '身高会保存到当前账号，用于 BMI 计算。' : '登录后再设置身高，参数会保存到账号。'}
+        />
+        {isSignedIn ? (
+          <form className="mt-5 flex flex-col gap-3 sm:flex-row" onSubmit={saveHeight}>
+            <Input
+              inputMode="numeric"
+              placeholder="170"
+              value={effectiveHeightCm}
+              onChange={(event) => setHeightCm(event.target.value)}
+            />
+            <Button type="submit">
+              保存身高
+            </Button>
+          </form>
+        ) : (
+          <EmptyState title="请先登录" body="登录后可以保存身高，并用它计算 BMI。" />
+        )}
         {profileMessage ? <p className="mt-3 text-sm text-sage-dark">{profileMessage}</p> : null}
       </Panel>
       <Panel>
