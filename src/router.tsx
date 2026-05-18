@@ -453,6 +453,7 @@ function SettingsPage() {
   const [password, setPassword] = useState('')
   const [heightCm, setHeightCm] = useState(String(readProfileHeight()))
   const [authMessage, setAuthMessage] = useState('')
+  const [profileMessage, setProfileMessage] = useState('')
   const csv = useMemo(
     () => (data ? exportEntriesCsv(data.entries, data.people) : ''),
     [data],
@@ -463,6 +464,7 @@ function SettingsPage() {
     try {
       await loginWithPassword(username, password)
       setAuthMessage('登录成功。')
+      setProfileMessage('')
       setUsername('')
       setPassword('')
       await queryClient.invalidateQueries({ queryKey: ['app-data'] })
@@ -474,6 +476,7 @@ function SettingsPage() {
   async function signOut() {
     await logout().catch(() => undefined)
     setAuthMessage('已退出登录。')
+    setProfileMessage('')
     await queryClient.invalidateQueries({ queryKey: ['app-data'] })
   }
 
@@ -481,11 +484,11 @@ function SettingsPage() {
     event.preventDefault()
     const nextHeight = Number(heightCm)
     if (!Number.isFinite(nextHeight) || nextHeight < 80 || nextHeight > 250) {
-      setAuthMessage('身高需要在 80-250 cm 之间。')
+      setProfileMessage('身高需要在 80-250 cm 之间。')
       return
     }
     writeProfileHeight(nextHeight)
-    setAuthMessage('身高已保存，BMI 会按新身高计算。')
+    setProfileMessage('身高已保存，BMI 会按新身高计算。')
     void queryClient.invalidateQueries({ queryKey: ['app-data'] })
   }
 
@@ -548,6 +551,7 @@ function SettingsPage() {
             保存身高
           </Button>
         </form>
+        {profileMessage ? <p className="mt-3 text-sm text-sage-dark">{profileMessage}</p> : null}
       </Panel>
       <Panel>
         <PageSectionTitle title="数据导出" body="导出家庭空间内所有体重记录，便于备份或迁移。" />

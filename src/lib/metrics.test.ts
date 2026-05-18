@@ -70,6 +70,7 @@ describe('metrics', () => {
   })
 
   it('returns a positive streak when today has an entry', () => {
-    expect(getStreakDays(entries)).toBeGreaterThanOrEqual(1)
+    const today = new Date().toISOString().slice(0, 10)
+    expect(getStreakDays([entry(today, 68)])).toBe(1)
   })
 })
