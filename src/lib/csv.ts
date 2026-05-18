@@ -1,4 +1,4 @@
-import type { TrackedPerson, WeightEntry } from './types'
+import type { AppData, TrackedPerson, WeightEntry } from './types'
 
 export function exportEntriesCsv(
   entries: WeightEntry[],
@@ -25,6 +25,29 @@ export function exportEntriesCsv(
 
 export function downloadCsv(filename: string, csv: string) {
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  downloadBlob(filename, blob)
+}
+
+export function exportBackupJson(data: AppData) {
+  return JSON.stringify(
+    {
+      exportedAt: new Date().toISOString(),
+      household: data.household,
+      people: data.people,
+      entries: data.entries,
+      goals: data.goals,
+    },
+    null,
+    2,
+  )
+}
+
+export function downloadJson(filename: string, json: string) {
+  const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
+  downloadBlob(filename, blob)
+}
+
+function downloadBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url

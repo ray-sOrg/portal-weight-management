@@ -26,7 +26,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { FormEvent, type ReactNode, useMemo, useState } from 'react'
 import { BmiChart, HouseholdCompareChart, WeightTrendChart } from './components/charts'
 import { Button, EmptyState, Input, Label, Panel, Stat } from './components/ui'
-import { downloadCsv, exportEntriesCsv } from './lib/csv'
+import { downloadCsv, downloadJson, exportBackupJson, exportEntriesCsv } from './lib/csv'
 import {
   calculateBmi,
   getBmiLabel,
@@ -451,6 +451,10 @@ function SettingsPage() {
     () => (data ? exportEntriesCsv(data.entries, data.people) : ''),
     [data],
   )
+  const backupJson = useMemo(
+    () => (data ? exportBackupJson(data) : ''),
+    [data],
+  )
 
   async function signIn(event: FormEvent) {
     event.preventDefault()
@@ -600,11 +604,20 @@ function SettingsPage() {
         {profileMessage ? <p className="mt-3 text-sm text-sage-dark">{profileMessage}</p> : null}
       </Panel>
       <Panel>
-        <PageSectionTitle title="数据导出" body="导出家庭空间内所有体重记录，便于备份或迁移。" />
-        <Button className="mt-5" variant="secondary" onClick={() => downloadCsv('weight-entries.csv', csv)} disabled={!data}>
-          <Download size={16} />
-          导出 CSV
-        </Button>
+        <PageSectionTitle title="数据管理" body="导出体重记录，便于备份、分析或后续迁移。" />
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <Button variant="secondary" onClick={() => downloadCsv('weight-entries.csv', csv)} disabled={!data}>
+            <Download size={16} />
+            导出 CSV
+          </Button>
+          <Button variant="secondary" onClick={() => downloadJson('weight-backup.json', backupJson)} disabled={!data}>
+            <Download size={16} />
+            导出备份
+          </Button>
+        </div>
+        <p className="mt-3 text-xs leading-5 text-sage">
+          CSV 适合表格分析；备份文件包含个人资料、记录和目标数据。
+        </p>
       </Panel>
     </div>
   )
