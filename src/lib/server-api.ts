@@ -137,6 +137,7 @@ function mapWeightRecord(
 async function request<T>(path: string, init: RequestInit = {}) {
   const controller = new AbortController()
   const timeoutId = window.setTimeout(() => controller.abort(), 8_000)
+  const csrfToken = getCookie('csrf_access_token')
 
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
@@ -144,6 +145,7 @@ async function request<T>(path: string, init: RequestInit = {}) {
     signal: init.signal ?? controller.signal,
     headers: {
       'Content-Type': 'application/json',
+      ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
       ...init.headers,
     },
   }).finally(() => window.clearTimeout(timeoutId))
@@ -157,4 +159,14 @@ async function request<T>(path: string, init: RequestInit = {}) {
     throw new Error(payload.message || 'API 请求失败')
   }
   return payload.data
+}
+
+function getCookie(name: string) {
+  if (typeof document === 'undefined') return ''
+  return document.cookie
+    .split('; ')
+    .find((cookie) => cookie.startsWith(`${name}=`))
+    ?.split('=')
+    .slice(1)
+    .join('=') ?? ''
 }
