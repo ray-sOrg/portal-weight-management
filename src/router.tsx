@@ -450,12 +450,14 @@ function SettingsPage() {
   const currentPerson = data?.people[0]
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [displayName, setDisplayName] = useState('')
   const [heightCm, setHeightCm] = useState('')
   const [birthDate, setBirthDate] = useState('')
   const [authMessage, setAuthMessage] = useState('')
   const [profileMessage, setProfileMessage] = useState('')
   const effectiveHeightCm = heightCm || String(currentPerson?.height_cm ?? 170)
   const effectiveBirthDate = birthDate || currentPerson?.birth_date || ''
+  const effectiveDisplayName = displayName || currentPerson?.name || ''
   const csv = useMemo(
     () => (data ? exportEntriesCsv(data.entries, data.people) : ''),
     [data],
@@ -467,6 +469,7 @@ function SettingsPage() {
       await loginWithPassword(username, password)
       setAuthMessage('登录成功。')
       setProfileMessage('')
+      setDisplayName('')
       setHeightCm('')
       setBirthDate('')
       setUsername('')
@@ -481,6 +484,7 @@ function SettingsPage() {
     await logout().catch(() => undefined)
     setAuthMessage('已退出登录。')
     setProfileMessage('')
+    setDisplayName('')
     setHeightCm('')
     setBirthDate('')
     await queryClient.invalidateQueries({ queryKey: ['app-data'] })
@@ -493,15 +497,22 @@ function SettingsPage() {
       return
     }
     const nextHeight = Number(effectiveHeightCm)
+    const nextDisplayName = effectiveDisplayName.trim()
+    if (!nextDisplayName) {
+      setProfileMessage('姓名不能为空。')
+      return
+    }
     if (!Number.isFinite(nextHeight) || nextHeight < 80 || nextHeight > 250) {
       setProfileMessage('身高需要在 80-250 cm 之间。')
       return
     }
     updateProfile({
+      displayName: nextDisplayName,
       heightCm: nextHeight,
       birthDate: effectiveBirthDate || null,
     })
       .then(() => {
+        setDisplayName(nextDisplayName)
         setHeightCm(String(nextHeight))
         setBirthDate(effectiveBirthDate)
         setProfileMessage('个人参数已保存到账号，BMI 会按新资料计算。')
@@ -561,10 +572,18 @@ function SettingsPage() {
       <Panel>
         <PageSectionTitle
           title="个人参数"
-          body={isSignedIn ? '身高和出生日期会保存到当前账号，用于 BMI 和家庭资料展示。' : '登录后再设置个人参数，资料会保存到账号。'}
+          body={isSignedIn ? '姓名、身高和出生日期会保存到当前账号。' : '登录后再设置个人参数，资料会保存到账号。'}
         />
         {isSignedIn ? (
-          <form className="mt-5 grid gap-3 sm:grid-cols-[1fr_1fr_auto]" onSubmit={saveProfile}>
+          <form className="mt-5 grid gap-3 sm:grid-cols-2" onSubmit={saveProfile}>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>姓名</Label>
+              <Input
+                placeholder="例如：唐涛"
+                value={effectiveDisplayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+              />
+            </div>
             <div className="space-y-2">
               <Label>身高 cm</Label>
               <Input
@@ -582,7 +601,7 @@ function SettingsPage() {
                 onChange={(event) => setBirthDate(event.target.value)}
               />
             </div>
-            <Button type="submit" className="sm:self-end">
+            <Button type="submit" className="sm:col-span-2">
               保存资料
             </Button>
           </form>

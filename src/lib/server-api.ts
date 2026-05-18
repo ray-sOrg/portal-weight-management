@@ -11,6 +11,7 @@ type ApiResponse<T> = {
 type ServerUser = {
   uuid: string
   username: string
+  displayName?: string | null
   role: string
   heightCm?: number | null
   birthDate?: string | null
@@ -56,7 +57,11 @@ export async function logout() {
   })
 }
 
-export async function updateProfile(profile: { heightCm: number; birthDate?: string | null }) {
+export async function updateProfile(profile: {
+  displayName: string
+  heightCm: number
+  birthDate?: string | null
+}) {
   const user = await request<ServerUser>('/api/user/profile/update', {
     method: 'POST',
     body: JSON.stringify(profile),
@@ -69,13 +74,14 @@ export async function loadWeightAppData(): Promise<AppData> {
   const user = await getCurrentUser()
   const records = await request<ServerWeightRecord[]>('/api/weight/records/all')
   const heightCm = user.heightCm ?? readProfileHeight()
+  const displayName = user.displayName || user.username
   writeProfileHeight(heightCm)
   const personId = `server-user-${user.username}`
 
   return {
     household: {
       id: 'server-console',
-      name: `${user.username} 的体重记录`,
+      name: `${displayName} 的体重记录`,
       created_by: user.username,
       created_at: user.create_time ?? new Date().toISOString(),
     },
@@ -84,7 +90,7 @@ export async function loadWeightAppData(): Promise<AppData> {
         id: personId,
         household_id: 'server-console',
         profile_id: user.uuid,
-        name: user.username,
+        name: displayName,
         height_cm: heightCm,
         birth_date: user.birthDate ?? null,
         created_by: user.username,
