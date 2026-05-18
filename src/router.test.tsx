@@ -10,7 +10,7 @@ vi.mock('./lib/server-api', () => ({
   loginWithPassword: vi.fn(),
   logout: vi.fn(),
   readProfileHeight: vi.fn(() => 170),
-  updateProfileHeight: vi.fn(),
+  updateProfile: vi.fn(),
 }))
 
 describe('router app shell', () => {

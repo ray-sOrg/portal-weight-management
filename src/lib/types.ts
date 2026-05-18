@@ -28,7 +28,7 @@ export type TrackedPerson = {
   profile_id: string | null
   name: string
   height_cm: number
-  birth_year: number | null
+  birth_date: string | null
   created_by: string
   created_at: string
 }

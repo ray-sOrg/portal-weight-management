@@ -41,7 +41,7 @@ import { useAddWeightEntry, useAppData } from './lib/queries'
 import {
   loginWithPassword,
   logout,
-  updateProfileHeight,
+  updateProfile,
 } from './lib/server-api'
 import type { TrackedPerson } from './lib/types'
 import { formatFullDate, formatKg, todayISO } from './lib/utils'
@@ -413,7 +413,7 @@ function HouseholdPage() {
             <div key={person.id} className="flex items-center justify-between rounded-lg border border-line bg-white p-4">
               <div>
                 <p className="font-medium text-ink">{person.name}</p>
-                <p className="mt-1 text-sm text-sage">{person.height_cm} cm · {person.birth_year ?? '未填出生年'}</p>
+                <p className="mt-1 text-sm text-sage">{person.height_cm} cm · {formatBirthDate(person.birth_date)}</p>
               </div>
               <span className="rounded-full bg-mist px-3 py-1 text-xs font-medium text-sage-dark">
                 {person.profile_id ? '账号成员' : '家庭资料'}
@@ -451,9 +451,11 @@ function SettingsPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [heightCm, setHeightCm] = useState('')
+  const [birthDate, setBirthDate] = useState('')
   const [authMessage, setAuthMessage] = useState('')
   const [profileMessage, setProfileMessage] = useState('')
   const effectiveHeightCm = heightCm || String(currentPerson?.height_cm ?? 170)
+  const effectiveBirthDate = birthDate || currentPerson?.birth_date || ''
   const csv = useMemo(
     () => (data ? exportEntriesCsv(data.entries, data.people) : ''),
     [data],
@@ -466,6 +468,7 @@ function SettingsPage() {
       setAuthMessage('登录成功。')
       setProfileMessage('')
       setHeightCm('')
+      setBirthDate('')
       setUsername('')
       setPassword('')
       await queryClient.invalidateQueries({ queryKey: ['app-data'] })
@@ -479,10 +482,11 @@ function SettingsPage() {
     setAuthMessage('已退出登录。')
     setProfileMessage('')
     setHeightCm('')
+    setBirthDate('')
     await queryClient.invalidateQueries({ queryKey: ['app-data'] })
   }
 
-  function saveHeight(event: FormEvent) {
+  function saveProfile(event: FormEvent) {
     event.preventDefault()
     if (!isSignedIn) {
       setProfileMessage('请先登录后再保存个人参数。')
@@ -493,10 +497,14 @@ function SettingsPage() {
       setProfileMessage('身高需要在 80-250 cm 之间。')
       return
     }
-    updateProfileHeight(nextHeight)
+    updateProfile({
+      heightCm: nextHeight,
+      birthDate: effectiveBirthDate || null,
+    })
       .then(() => {
         setHeightCm(String(nextHeight))
-        setProfileMessage('身高已保存到账号，BMI 会按新身高计算。')
+        setBirthDate(effectiveBirthDate)
+        setProfileMessage('个人参数已保存到账号，BMI 会按新资料计算。')
         void queryClient.invalidateQueries({ queryKey: ['app-data'] })
       })
       .catch((error: unknown) => {
@@ -553,22 +561,33 @@ function SettingsPage() {
       <Panel>
         <PageSectionTitle
           title="个人参数"
-          body={isSignedIn ? '身高会保存到当前账号，用于 BMI 计算。' : '登录后再设置身高，参数会保存到账号。'}
+          body={isSignedIn ? '身高和出生日期会保存到当前账号，用于 BMI 和家庭资料展示。' : '登录后再设置个人参数，资料会保存到账号。'}
         />
         {isSignedIn ? (
-          <form className="mt-5 flex flex-col gap-3 sm:flex-row" onSubmit={saveHeight}>
-            <Input
-              inputMode="numeric"
-              placeholder="170"
-              value={effectiveHeightCm}
-              onChange={(event) => setHeightCm(event.target.value)}
-            />
-            <Button type="submit">
-              保存身高
+          <form className="mt-5 grid gap-3 sm:grid-cols-[1fr_1fr_auto]" onSubmit={saveProfile}>
+            <div className="space-y-2">
+              <Label>身高 cm</Label>
+              <Input
+                inputMode="numeric"
+                placeholder="170"
+                value={effectiveHeightCm}
+                onChange={(event) => setHeightCm(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>出生日期</Label>
+              <Input
+                type="date"
+                value={effectiveBirthDate}
+                onChange={(event) => setBirthDate(event.target.value)}
+              />
+            </div>
+            <Button type="submit" className="sm:self-end">
+              保存资料
             </Button>
           </form>
         ) : (
-          <EmptyState title="请先登录" body="登录后可以保存身高，并用它计算 BMI。" />
+          <EmptyState title="请先登录" body="登录后可以保存身高和出生日期。" />
         )}
         {profileMessage ? <p className="mt-3 text-sm text-sage-dark">{profileMessage}</p> : null}
       </Panel>
@@ -623,6 +642,10 @@ function ScreenLoading() {
       <div className="h-80 animate-pulse rounded-lg bg-mist" />
     </Panel>
   )
+}
+
+function formatBirthDate(birthDate: string | null) {
+  return birthDate ? `出生 ${birthDate}` : '未填出生日期'
 }
 
 function LoginPrompt() {

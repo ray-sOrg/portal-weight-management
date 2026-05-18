@@ -16,7 +16,7 @@ const person: TrackedPerson = {
   profile_id: null,
   name: '测试成员',
   height_cm: 170,
-  birth_year: null,
+  birth_date: null,
   created_by: 'u1',
   created_at: '2026-05-01T00:00:00Z',
 }

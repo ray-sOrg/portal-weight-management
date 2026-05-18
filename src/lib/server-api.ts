@@ -13,6 +13,7 @@ type ServerUser = {
   username: string
   role: string
   heightCm?: number | null
+  birthDate?: string | null
   create_time?: string
 }
 
@@ -55,12 +56,12 @@ export async function logout() {
   })
 }
 
-export async function updateProfileHeight(heightCm: number) {
+export async function updateProfile(profile: { heightCm: number; birthDate?: string | null }) {
   const user = await request<ServerUser>('/api/user/profile/update', {
     method: 'POST',
-    body: JSON.stringify({ heightCm }),
+    body: JSON.stringify(profile),
   })
-  writeProfileHeight(heightCm)
+  writeProfileHeight(profile.heightCm)
   return user
 }
 
@@ -85,7 +86,7 @@ export async function loadWeightAppData(): Promise<AppData> {
         profile_id: user.uuid,
         name: user.username,
         height_cm: heightCm,
-        birth_year: null,
+        birth_date: user.birthDate ?? null,
         created_by: user.username,
         created_at: user.create_time ?? new Date().toISOString(),
       },

@@ -11,7 +11,7 @@ describe('exportEntriesCsv', () => {
         profile_id: null,
         name: '林安',
         height_cm: 166,
-        birth_year: null,
+        birth_date: null,
         created_by: 'u1',
         created_at: '2026-05-01T00:00:00Z',
       },
