@@ -57,6 +57,9 @@ export type AppData = {
   people: TrackedPerson[]
   entries: WeightEntry[]
   goals: WeightGoal[]
+  permissions: {
+    canManageMembers: boolean
+  }
 }
 
 export type NewWeightEntry = {

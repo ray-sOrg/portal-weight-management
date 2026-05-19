@@ -120,6 +120,9 @@ export async function loadWeightAppData(): Promise<AppData> {
     people,
     entries: records.map((record) => mapWeightRecord(record, personId, user.username)),
     goals: [],
+    permissions: {
+      canManageMembers: user.role === 'super_admin' || user.role === 'admin',
+    },
   }
 }
 

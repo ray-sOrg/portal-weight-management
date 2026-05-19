@@ -411,6 +411,7 @@ function HouseholdPage() {
   if (isLoading) return <ScreenLoading />
   if (error) return <LoginPrompt />
   if (!data) return <LoginPrompt />
+  const canManageMembers = data.permissions.canManageMembers
 
   function submitPerson(event: FormEvent) {
     event.preventDefault()
@@ -455,50 +456,52 @@ function HouseholdPage() {
           编辑个人资料
         </Link>
       </Panel>
-      <Panel>
-        <PageSectionTitle title="添加成员" body="可以把老婆或其他家庭成员加入同一账号下记录。" />
-        <form className="mt-5 grid gap-3" onSubmit={submitPerson}>
-          <div className="space-y-2">
-            <Label>姓名</Label>
-            <Input
-              placeholder="例如：王小雨"
-              value={draft.name}
-              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-            />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+      {canManageMembers ? (
+        <Panel>
+          <PageSectionTitle title="添加成员" body="管理员可以把老婆或其他家庭成员加入同一账号下记录。" />
+          <form className="mt-5 grid gap-3" onSubmit={submitPerson}>
             <div className="space-y-2">
-              <Label>身高 cm</Label>
+              <Label>姓名</Label>
               <Input
-                inputMode="numeric"
-                placeholder="165"
-                value={draft.heightCm}
-                onChange={(event) => setDraft({ ...draft, heightCm: event.target.value })}
+                placeholder="例如：王小雨"
+                value={draft.name}
+                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
               />
             </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>身高 cm</Label>
+                <Input
+                  inputMode="numeric"
+                  placeholder="165"
+                  value={draft.heightCm}
+                  onChange={(event) => setDraft({ ...draft, heightCm: event.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>出生日期</Label>
+                <Input
+                  type="date"
+                  value={draft.birthDate}
+                  onChange={(event) => setDraft({ ...draft, birthDate: event.target.value })}
+                />
+              </div>
+            </div>
             <div className="space-y-2">
-              <Label>出生日期</Label>
+              <Label>关系</Label>
               <Input
-                type="date"
-                value={draft.birthDate}
-                onChange={(event) => setDraft({ ...draft, birthDate: event.target.value })}
+                placeholder="例如：老婆"
+                value={draft.relationship}
+                onChange={(event) => setDraft({ ...draft, relationship: event.target.value })}
               />
             </div>
-          </div>
-          <div className="space-y-2">
-            <Label>关系</Label>
-            <Input
-              placeholder="例如：老婆"
-              value={draft.relationship}
-              onChange={(event) => setDraft({ ...draft, relationship: event.target.value })}
-            />
-          </div>
-          <Button type="submit" disabled={addPerson.isPending || !draft.name.trim() || !draft.heightCm}>
-            {addPerson.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Users size={16} />}
-            {addPerson.isPending ? '添加中...' : '添加成员'}
-          </Button>
-        </form>
-      </Panel>
+            <Button type="submit" disabled={addPerson.isPending || !draft.name.trim() || !draft.heightCm}>
+              {addPerson.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Users size={16} />}
+              {addPerson.isPending ? '添加中...' : '添加成员'}
+            </Button>
+          </form>
+        </Panel>
+      ) : null}
     </div>
   )
 }
