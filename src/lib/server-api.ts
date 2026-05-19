@@ -113,7 +113,7 @@ export async function loadWeightAppData(): Promise<AppData> {
   return {
     household: {
       id: 'server-console',
-      name: `${displayName} 的体重记录`,
+      name: '我的家庭',
       created_by: user.username,
       created_at: user.create_time ?? new Date().toISOString(),
     },
