@@ -65,3 +65,10 @@ export type NewWeightEntry = {
   weightKg: number
   note?: string
 }
+
+export type NewTrackedPerson = {
+  name: string
+  heightCm: number
+  birthDate?: string | null
+  relationship?: string | null
+}

@@ -6,6 +6,7 @@ import { router } from './router'
 
 vi.mock('./lib/server-api', () => ({
   addServerWeightEntry: vi.fn(),
+  createServerTrackedPerson: vi.fn(),
   loadWeightAppData: vi.fn(() => Promise.reject(new Error('未登录'))),
   loginWithPassword: vi.fn(),
   logout: vi.fn(),

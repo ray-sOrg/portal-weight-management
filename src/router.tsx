@@ -38,7 +38,7 @@ import {
   getWeightChange,
   sortEntries,
 } from './lib/metrics'
-import { useAddWeightEntry, useAppData } from './lib/queries'
+import { useAddWeightEntry, useAppData, useUpsertPerson } from './lib/queries'
 import {
   loginWithPassword,
   logout,
@@ -401,14 +401,40 @@ function ReportsPage() {
 
 function HouseholdPage() {
   const { data, error, isLoading } = useAppData()
+  const addPerson = useUpsertPerson()
+  const [draft, setDraft] = useState({
+    name: '',
+    heightCm: '',
+    birthDate: '',
+    relationship: '',
+  })
   if (isLoading) return <ScreenLoading />
   if (error) return <LoginPrompt />
   if (!data) return <LoginPrompt />
 
+  function submitPerson(event: FormEvent) {
+    event.preventDefault()
+    const heightCm = Number(draft.heightCm)
+    if (!draft.name.trim() || !Number.isFinite(heightCm)) return
+    addPerson.mutate(
+      {
+        name: draft.name.trim(),
+        heightCm,
+        birthDate: draft.birthDate || null,
+        relationship: draft.relationship.trim() || null,
+      },
+      {
+        onSuccess: () => {
+          setDraft({ name: '', heightCm: '', birthDate: '', relationship: '' })
+        },
+      },
+    )
+  }
+
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4 lg:grid-cols-[1.1fr_.9fr] lg:gap-6">
       <Panel>
-        <PageSectionTitle title={data.household.name} body="当前先支持记录本人；姓名、身高和出生日期可在设置中维护。" />
+        <PageSectionTitle title={data.household.name} body="成员资料用于区分记录对象，并参与 BMI 和报表计算。" />
         <div className="mt-5 grid gap-3">
           {data.people.map((person) => (
             <div key={person.id} className="flex items-center justify-between rounded-lg border border-line bg-white p-4">
@@ -428,6 +454,50 @@ function HouseholdPage() {
         >
           编辑个人资料
         </Link>
+      </Panel>
+      <Panel>
+        <PageSectionTitle title="添加成员" body="可以把老婆或其他家庭成员加入同一账号下记录。" />
+        <form className="mt-5 grid gap-3" onSubmit={submitPerson}>
+          <div className="space-y-2">
+            <Label>姓名</Label>
+            <Input
+              placeholder="例如：王小雨"
+              value={draft.name}
+              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>身高 cm</Label>
+              <Input
+                inputMode="numeric"
+                placeholder="165"
+                value={draft.heightCm}
+                onChange={(event) => setDraft({ ...draft, heightCm: event.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>出生日期</Label>
+              <Input
+                type="date"
+                value={draft.birthDate}
+                onChange={(event) => setDraft({ ...draft, birthDate: event.target.value })}
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>关系</Label>
+            <Input
+              placeholder="例如：老婆"
+              value={draft.relationship}
+              onChange={(event) => setDraft({ ...draft, relationship: event.target.value })}
+            />
+          </div>
+          <Button type="submit" disabled={addPerson.isPending || !draft.name.trim() || !draft.heightCm}>
+            {addPerson.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Users size={16} />}
+            {addPerson.isPending ? '添加中...' : '添加成员'}
+          </Button>
+        </form>
       </Panel>
     </div>
   )

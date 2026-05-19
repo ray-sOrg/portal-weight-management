@@ -1,5 +1,5 @@
 import { calculateBmi } from './metrics'
-import type { AppData, NewWeightEntry, WeightEntry } from './types'
+import type { AppData, NewTrackedPerson, NewWeightEntry, TrackedPerson, WeightEntry } from './types'
 
 type ApiResponse<T> = {
   code: number
@@ -20,6 +20,7 @@ type ServerUser = {
 
 type ServerWeightRecord = {
   id: number
+  trackedPersonId?: number | null
   weight: number
   recordDate: string
   bodyFat?: number | null
@@ -27,6 +28,15 @@ type ServerWeightRecord = {
   note?: string | null
   createdAt?: string
   updatedAt?: string
+}
+
+type ServerTrackedPerson = {
+  id: number
+  name: string
+  heightCm: number
+  birthDate?: string | null
+  relationship?: string | null
+  createdAt?: string
 }
 
 const runtimeConfig =
@@ -70,13 +80,35 @@ export async function updateProfile(profile: {
   return user
 }
 
+export async function createServerTrackedPerson(input: NewTrackedPerson) {
+  return request<ServerTrackedPerson>('/api/weight/person/add', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
 export async function loadWeightAppData(): Promise<AppData> {
   const user = await getCurrentUser()
+  const trackedPeople = await request<ServerTrackedPerson[]>('/api/weight/people')
   const records = await request<ServerWeightRecord[]>('/api/weight/records/all')
   const heightCm = user.heightCm ?? readProfileHeight()
   const displayName = user.displayName || user.username
   writeProfileHeight(heightCm)
   const personId = `server-user-${user.username}`
+  const extraPeople = trackedPeople.map((person) => mapTrackedPerson(person, user.username))
+  const people = [
+    {
+      id: personId,
+      household_id: 'server-console',
+      profile_id: user.uuid,
+      name: displayName,
+      height_cm: heightCm,
+      birth_date: user.birthDate ?? null,
+      created_by: user.username,
+      created_at: user.create_time ?? new Date().toISOString(),
+    },
+    ...extraPeople,
+  ]
 
   return {
     household: {
@@ -85,18 +117,7 @@ export async function loadWeightAppData(): Promise<AppData> {
       created_by: user.username,
       created_at: user.create_time ?? new Date().toISOString(),
     },
-    people: [
-      {
-        id: personId,
-        household_id: 'server-console',
-        profile_id: user.uuid,
-        name: displayName,
-        height_cm: heightCm,
-        birth_date: user.birthDate ?? null,
-        created_by: user.username,
-        created_at: user.create_time ?? new Date().toISOString(),
-      },
-    ],
+    people,
     entries: records.map((record) => mapWeightRecord(record, personId, user.username)),
     goals: [],
   }
@@ -106,6 +127,7 @@ export async function addServerWeightEntry(input: NewWeightEntry, heightCm: numb
   const record = await request<ServerWeightRecord>('/api/weight/record/add', {
     method: 'POST',
     body: JSON.stringify({
+      trackedPersonId: parseServerTrackedPersonId(input.trackedPersonId),
       weight: input.weightKg,
       recordDate: input.measuredOn,
       bmi: calculateBmi(input.weightKg, heightCm),
@@ -125,6 +147,19 @@ export function writeProfileHeight(heightCm: number) {
   localStorage.setItem('weight-profile-height-cm', String(heightCm))
 }
 
+function mapTrackedPerson(person: ServerTrackedPerson, username: string): TrackedPerson {
+  return {
+    id: `server-person-${person.id}`,
+    household_id: 'server-console',
+    profile_id: null,
+    name: person.name,
+    height_cm: person.heightCm,
+    birth_date: person.birthDate ?? null,
+    created_by: username,
+    created_at: person.createdAt ?? new Date().toISOString(),
+  }
+}
+
 function mapWeightRecord(
   record: ServerWeightRecord,
   trackedPersonId: string,
@@ -132,13 +167,19 @@ function mapWeightRecord(
 ): WeightEntry {
   return {
     id: String(record.id),
-    tracked_person_id: trackedPersonId,
+    tracked_person_id: record.trackedPersonId ? `server-person-${record.trackedPersonId}` : trackedPersonId,
     measured_on: record.recordDate,
     weight_kg: record.weight,
     note: record.note ?? null,
     created_by: username,
     created_at: record.createdAt ?? `${record.recordDate}T00:00:00Z`,
   }
+}
+
+function parseServerTrackedPersonId(trackedPersonId: string) {
+  return trackedPersonId.startsWith('server-person-')
+    ? Number(trackedPersonId.replace('server-person-', ''))
+    : undefined
 }
 
 async function request<T>(path: string, init: RequestInit = {}) {

@@ -2,10 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   addServerWeightEntry,
+  createServerTrackedPerson,
   loadWeightAppData,
   readProfileHeight,
 } from './server-api'
-import type { AppData, NewWeightEntry } from './types'
+import type { AppData, NewTrackedPerson, NewWeightEntry } from './types'
 
 export function useAppData() {
   return useQuery({
@@ -48,6 +49,6 @@ async function addWeightEntry(input: NewWeightEntry) {
   await addServerWeightEntry(input, readProfileHeight())
 }
 
-async function upsertPerson() {
-  throw new Error('家庭成员管理接口还没有接入后端。')
+async function upsertPerson(input: NewTrackedPerson) {
+  await createServerTrackedPerson(input)
 }
