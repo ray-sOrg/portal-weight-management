@@ -16,6 +16,7 @@ import {
   Home,
   LogIn,
   LogOut,
+  LoaderCircle,
   Plus,
   Scale,
   Settings,
@@ -444,6 +445,9 @@ function SettingsPage() {
   const [birthDate, setBirthDate] = useState('')
   const [authMessage, setAuthMessage] = useState('')
   const [profileMessage, setProfileMessage] = useState('')
+  const [isSigningIn, setIsSigningIn] = useState(false)
+  const [isSigningOut, setIsSigningOut] = useState(false)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
   const effectiveHeightCm = heightCm || String(currentPerson?.height_cm ?? 170)
   const effectiveBirthDate = birthDate || currentPerson?.birth_date || ''
   const effectiveDisplayName = displayName || currentPerson?.name || ''
@@ -458,6 +462,8 @@ function SettingsPage() {
 
   async function signIn(event: FormEvent) {
     event.preventDefault()
+    setIsSigningIn(true)
+    setAuthMessage('')
     try {
       await loginWithPassword(username, password)
       setAuthMessage('登录成功。')
@@ -470,17 +476,24 @@ function SettingsPage() {
       await queryClient.invalidateQueries({ queryKey: ['app-data'] })
     } catch (error) {
       setAuthMessage(error instanceof Error ? error.message : '登录失败')
+    } finally {
+      setIsSigningIn(false)
     }
   }
 
   async function signOut() {
-    await logout().catch(() => undefined)
-    setAuthMessage('已退出登录。')
-    setProfileMessage('')
-    setDisplayName('')
-    setHeightCm('')
-    setBirthDate('')
-    await queryClient.invalidateQueries({ queryKey: ['app-data'] })
+    setIsSigningOut(true)
+    try {
+      await logout().catch(() => undefined)
+      setAuthMessage('已退出登录。')
+      setProfileMessage('')
+      setDisplayName('')
+      setHeightCm('')
+      setBirthDate('')
+      await queryClient.invalidateQueries({ queryKey: ['app-data'] })
+    } finally {
+      setIsSigningOut(false)
+    }
   }
 
   function saveProfile(event: FormEvent) {
@@ -499,6 +512,8 @@ function SettingsPage() {
       setProfileMessage('身高需要在 80-250 cm 之间。')
       return
     }
+    setIsSavingProfile(true)
+    setProfileMessage('')
     updateProfile({
       displayName: nextDisplayName,
       heightCm: nextHeight,
@@ -513,6 +528,9 @@ function SettingsPage() {
       })
       .catch((error: unknown) => {
         setProfileMessage(error instanceof Error ? error.message : '身高保存失败')
+      })
+      .finally(() => {
+        setIsSavingProfile(false)
       })
   }
 
@@ -534,29 +552,31 @@ function SettingsPage() {
                 <p className="text-xs text-sage">{data?.entries.length ?? 0} 条体重记录</p>
               </div>
             </div>
-            <Button type="button" variant="secondary" className="w-full" onClick={signOut}>
-              <LogOut size={16} />
-              退出登录
+            <Button type="button" variant="secondary" className="w-full" onClick={signOut} disabled={isSigningOut}>
+              {isSigningOut ? <LoaderCircle className="animate-spin" size={16} /> : <LogOut size={16} />}
+              {isSigningOut ? '退出中...' : '退出登录'}
             </Button>
           </div>
         ) : (
           <form className="mt-5 grid gap-3" onSubmit={signIn}>
             <Input
               autoComplete="username"
+              disabled={isSigningIn}
               placeholder="用户名"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
             />
             <Input
               autoComplete="current-password"
+              disabled={isSigningIn}
               placeholder="密码"
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
-            <Button type="submit" disabled={!username || !password}>
-              <LogIn size={16} />
-              登录
+            <Button type="submit" disabled={!username || !password || isSigningIn}>
+              {isSigningIn ? <LoaderCircle className="animate-spin" size={16} /> : <LogIn size={16} />}
+              {isSigningIn ? '登录中...' : '登录'}
             </Button>
           </form>
         )}
@@ -573,6 +593,7 @@ function SettingsPage() {
               <Label>姓名</Label>
               <Input
                 placeholder="例如：唐涛"
+                disabled={isSavingProfile}
                 value={effectiveDisplayName}
                 onChange={(event) => setDisplayName(event.target.value)}
               />
@@ -581,6 +602,7 @@ function SettingsPage() {
               <Label>身高 cm</Label>
               <Input
                 inputMode="numeric"
+                disabled={isSavingProfile}
                 placeholder="170"
                 value={effectiveHeightCm}
                 onChange={(event) => setHeightCm(event.target.value)}
@@ -590,12 +612,14 @@ function SettingsPage() {
               <Label>出生日期</Label>
               <Input
                 type="date"
+                disabled={isSavingProfile}
                 value={effectiveBirthDate}
                 onChange={(event) => setBirthDate(event.target.value)}
               />
             </div>
-            <Button type="submit" className="sm:col-span-2">
-              保存资料
+            <Button type="submit" className="sm:col-span-2" disabled={isSavingProfile}>
+              {isSavingProfile ? <LoaderCircle className="animate-spin" size={16} /> : null}
+              {isSavingProfile ? '保存中...' : '保存资料'}
             </Button>
           </form>
         ) : (
