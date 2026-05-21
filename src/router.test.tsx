@@ -10,7 +10,6 @@ vi.mock('./lib/server-api', () => ({
   loadWeightAppData: vi.fn(() => Promise.reject(new Error('未登录'))),
   loginWithPassword: vi.fn(),
   logout: vi.fn(),
-  readProfileHeight: vi.fn(() => 170),
   updateProfile: vi.fn(),
 }))
 

@@ -82,12 +82,10 @@ export async function updateProfile(profile: {
   heightCm: number
   birthDate?: string | null
 }) {
-  const user = await request<ServerUser>('/api/user/profile/update', {
+  return request<ServerUser>('/api/user/profile/update', {
     method: 'POST',
     body: JSON.stringify(profile),
   })
-  writeProfileHeight(profile.heightCm)
-  return user
 }
 
 export async function createServerTrackedPerson(input: NewTrackedPerson) {
@@ -102,9 +100,8 @@ export async function loadWeightAppData(): Promise<AppData> {
   const trackedPeople = await request<ServerTrackedPerson[]>('/api/weight/people')
   const records = await request<ServerWeightRecord[]>('/api/weight/records/all')
   let goals = await request<ServerWeightGoal[]>('/api/weight/goals')
-  const heightCm = user.heightCm ?? readProfileHeight()
+  const heightCm = user.heightCm ?? 170
   const displayName = user.displayName || user.username
-  writeProfileHeight(heightCm)
   const personId = `server-user-${user.username}`
   const extraPeople = trackedPeople.map((person) => mapTrackedPerson(person, user.username))
   const people = [
@@ -183,16 +180,6 @@ export async function editServerWeightEntry(input: NewWeightEntry) {
     }),
   })
   return record
-}
-
-export function readProfileHeight() {
-  const raw = localStorage.getItem('weight-profile-height-cm')
-  const value = raw ? Number(raw) : 170
-  return Number.isFinite(value) && value >= 80 && value <= 250 ? value : 170
-}
-
-export function writeProfileHeight(heightCm: number) {
-  localStorage.setItem('weight-profile-height-cm', String(heightCm))
 }
 
 function mapTrackedPerson(person: ServerTrackedPerson, username: string): TrackedPerson {
