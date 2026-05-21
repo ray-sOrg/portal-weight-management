@@ -1,5 +1,5 @@
 import { calculateBmi } from './metrics'
-import type { AppData, NewTrackedPerson, NewWeightEntry, TrackedPerson, WeightEntry } from './types'
+import type { AppData, NewTrackedPerson, NewWeightEntry, NewWeightGoal, TrackedPerson, WeightEntry, WeightGoal } from './types'
 
 type ApiResponse<T> = {
   code: number
@@ -37,6 +37,16 @@ type ServerTrackedPerson = {
   birthDate?: string | null
   relationship?: string | null
   createdAt?: string
+}
+
+type ServerWeightGoal = {
+  id: number
+  trackedPersonId?: number | null
+  startWeight: number
+  targetWeight: number
+  targetDate?: string | null
+  createdAt?: string
+  updatedAt?: string
 }
 
 const runtimeConfig =
@@ -91,6 +101,7 @@ export async function loadWeightAppData(): Promise<AppData> {
   const user = await getCurrentUser()
   const trackedPeople = await request<ServerTrackedPerson[]>('/api/weight/people')
   const records = await request<ServerWeightRecord[]>('/api/weight/records/all')
+  let goals = await request<ServerWeightGoal[]>('/api/weight/goals')
   const heightCm = user.heightCm ?? readProfileHeight()
   const displayName = user.displayName || user.username
   writeProfileHeight(heightCm)
@@ -110,6 +121,12 @@ export async function loadWeightAppData(): Promise<AppData> {
     ...extraPeople,
   ]
 
+  const mappedGoals = goals.map((goal) => mapWeightGoal(goal, personId))
+  const migratedGoals = await migrateLocalGoals(mappedGoals)
+  if (migratedGoals) {
+    goals = await request<ServerWeightGoal[]>('/api/weight/goals')
+  }
+
   return {
     household: {
       id: 'server-console',
@@ -119,11 +136,24 @@ export async function loadWeightAppData(): Promise<AppData> {
     },
     people,
     entries: records.map((record) => mapWeightRecord(record, personId, user.username)),
-    goals: [],
+    goals: goals.map((goal) => mapWeightGoal(goal, personId)),
     permissions: {
       canManageMembers: user.role === 'super_admin' || user.role === 'admin',
     },
   }
+}
+
+export async function upsertServerWeightGoal(input: NewWeightGoal) {
+  const goal = await request<ServerWeightGoal>('/api/weight/goal/upsert', {
+    method: 'POST',
+    body: JSON.stringify({
+      trackedPersonId: parseServerTrackedPersonId(input.trackedPersonId),
+      startWeight: input.startWeightKg,
+      targetWeight: input.targetWeightKg,
+      targetDate: input.targetOn || undefined,
+    }),
+  })
+  return goal
 }
 
 export async function addServerWeightEntry(input: NewWeightEntry) {
@@ -191,6 +221,47 @@ function mapWeightRecord(
     note: record.note ?? null,
     created_by: username,
     created_at: record.createdAt ?? `${record.recordDate}T00:00:00Z`,
+  }
+}
+
+function mapWeightGoal(goal: ServerWeightGoal, trackedPersonId: string): WeightGoal {
+  return {
+    id: String(goal.id),
+    tracked_person_id: goal.trackedPersonId ? `server-person-${goal.trackedPersonId}` : trackedPersonId,
+    start_weight_kg: goal.startWeight,
+    target_weight_kg: goal.targetWeight,
+    target_on: goal.targetDate ?? null,
+    created_at: goal.createdAt ?? new Date().toISOString(),
+  }
+}
+
+async function migrateLocalGoals(serverGoals: WeightGoal[]) {
+  const localGoals = readLocalGoals()
+  const missingGoals = localGoals.filter(
+    (localGoal) =>
+      !serverGoals.some((serverGoal) => serverGoal.tracked_person_id === localGoal.tracked_person_id),
+  )
+  if (missingGoals.length === 0) return false
+  await Promise.all(
+    missingGoals.map((goal) =>
+      upsertServerWeightGoal({
+        trackedPersonId: goal.tracked_person_id,
+        startWeightKg: goal.start_weight_kg,
+        targetWeightKg: goal.target_weight_kg,
+        targetOn: goal.target_on,
+      }),
+    ),
+  )
+  localStorage.removeItem('weight-goals-v1')
+  return true
+}
+
+function readLocalGoals(): WeightGoal[] {
+  try {
+    const raw = localStorage.getItem('weight-goals-v1')
+    return raw ? JSON.parse(raw) as WeightGoal[] : []
+  } catch {
+    return []
   }
 }
 

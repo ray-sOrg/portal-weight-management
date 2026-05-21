@@ -5,8 +5,9 @@ import {
   createServerTrackedPerson,
   editServerWeightEntry,
   loadWeightAppData,
+  upsertServerWeightGoal,
 } from './server-api'
-import type { AppData, NewTrackedPerson, NewWeightEntry, NewWeightGoal, WeightGoal } from './types'
+import type { AppData, NewTrackedPerson, NewWeightEntry, NewWeightGoal } from './types'
 
 export function useAppData() {
   return useQuery({
@@ -54,13 +55,7 @@ export function useUpsertPerson() {
 }
 
 async function loadAppData(): Promise<AppData> {
-  const data = await loadWeightAppData()
-  return {
-    ...data,
-    goals: readLocalGoals().filter((goal) =>
-      data.people.some((person) => person.id === goal.tracked_person_id),
-    ),
-  }
+  return loadWeightAppData()
 }
 
 async function addWeightEntry(input: NewWeightEntry) {
@@ -76,30 +71,5 @@ async function upsertPerson(input: NewTrackedPerson) {
 }
 
 async function upsertGoal(input: NewWeightGoal) {
-  const goals = readLocalGoals()
-  const nextGoal: WeightGoal = {
-    id: `local-goal-${input.trackedPersonId}`,
-    tracked_person_id: input.trackedPersonId,
-    start_weight_kg: input.startWeightKg,
-    target_weight_kg: input.targetWeightKg,
-    target_on: input.targetOn ?? null,
-    created_at: new Date().toISOString(),
-  }
-  writeLocalGoals([
-    ...goals.filter((goal) => goal.tracked_person_id !== input.trackedPersonId),
-    nextGoal,
-  ])
-}
-
-function readLocalGoals(): WeightGoal[] {
-  try {
-    const raw = localStorage.getItem('weight-goals-v1')
-    return raw ? JSON.parse(raw) as WeightGoal[] : []
-  } catch {
-    return []
-  }
-}
-
-function writeLocalGoals(goals: WeightGoal[]) {
-  localStorage.setItem('weight-goals-v1', JSON.stringify(goals))
+  await upsertServerWeightGoal(input)
 }
