@@ -66,7 +66,16 @@ export type NewWeightEntry = {
   trackedPersonId: string
   measuredOn: string
   weightKg: number
+  heightCm: number
+  existingEntryId?: string
   note?: string
+}
+
+export type NewWeightGoal = {
+  trackedPersonId: string
+  startWeightKg: number
+  targetWeightKg: number
+  targetOn?: string | null
 }
 
 export type NewTrackedPerson = {

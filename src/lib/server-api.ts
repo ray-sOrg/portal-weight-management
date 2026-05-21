@@ -126,14 +126,29 @@ export async function loadWeightAppData(): Promise<AppData> {
   }
 }
 
-export async function addServerWeightEntry(input: NewWeightEntry, heightCm: number) {
+export async function addServerWeightEntry(input: NewWeightEntry) {
   const record = await request<ServerWeightRecord>('/api/weight/record/add', {
     method: 'POST',
     body: JSON.stringify({
       trackedPersonId: parseServerTrackedPersonId(input.trackedPersonId),
       weight: input.weightKg,
       recordDate: input.measuredOn,
-      bmi: calculateBmi(input.weightKg, heightCm),
+      bmi: calculateBmi(input.weightKg, input.heightCm),
+      note: input.note || undefined,
+    }),
+  })
+  return record
+}
+
+export async function editServerWeightEntry(input: NewWeightEntry) {
+  const record = await request<ServerWeightRecord>('/api/weight/record/edit', {
+    method: 'POST',
+    body: JSON.stringify({
+      id: input.existingEntryId,
+      trackedPersonId: parseServerTrackedPersonId(input.trackedPersonId),
+      weight: input.weightKg,
+      recordDate: input.measuredOn,
+      bmi: calculateBmi(input.weightKg, input.heightCm),
       note: input.note || undefined,
     }),
   })
@@ -190,19 +205,29 @@ async function request<T>(path: string, init: RequestInit = {}) {
   const timeoutId = window.setTimeout(() => controller.abort(), 8_000)
   const csrfToken = getCookie('csrf_access_token')
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    credentials: 'include',
-    signal: init.signal ?? controller.signal,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
-      ...init.headers,
-    },
-  }).finally(() => window.clearTimeout(timeoutId))
+  let response: Response
+  try {
+    response = await fetch(`${apiBaseUrl}${path}`, {
+      ...init,
+      credentials: 'include',
+      signal: init.signal ?? controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
+        ...init.headers,
+      },
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('请求超时，请稍后重试')
+    }
+    throw new Error('网络连接失败，请检查网络后重试')
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
 
   if (!response.ok) {
-    throw new Error(`API 请求失败：${response.status}`)
+    throw new Error(`服务暂时不可用（${response.status}）`)
   }
 
   const payload = (await response.json()) as ApiResponse<T>

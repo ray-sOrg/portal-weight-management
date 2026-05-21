@@ -49,6 +49,39 @@ export function getWeightChange(entries: WeightEntry[], days: number) {
   return round(latest.weight_kg - baseline.weight_kg, 1)
 }
 
+export type TrendRange = '30' | '90' | 'all'
+
+export function filterEntriesByRange(entries: WeightEntry[], range: TrendRange) {
+  const ordered = sortEntries(entries)
+  if (range === 'all') return ordered
+  const latest = ordered.at(-1)
+  if (!latest) return []
+  const latestTime = new Date(latest.measured_on).getTime()
+  const boundary = latestTime - (Number(range) - 1) * 24 * 60 * 60 * 1000
+  return ordered.filter((entry) => new Date(entry.measured_on).getTime() >= boundary)
+}
+
+export function getLargestDailySwing(entries: WeightEntry[]) {
+  const ordered = sortEntries(entries)
+  let largest: {
+    date: string
+    changeKg: number
+  } | null = null
+  for (let index = 1; index < ordered.length; index += 1) {
+    const previous = ordered[index - 1]
+    const current = ordered[index]
+    const previousTime = new Date(previous.measured_on).getTime()
+    const currentTime = new Date(current.measured_on).getTime()
+    const dayDiff = Math.round((currentTime - previousTime) / (24 * 60 * 60 * 1000))
+    if (dayDiff !== 1) continue
+    const changeKg = round(current.weight_kg - previous.weight_kg, 1)
+    if (!largest || Math.abs(changeKg) > Math.abs(largest.changeKg)) {
+      largest = { date: current.measured_on, changeKg }
+    }
+  }
+  return largest
+}
+
 export function buildTrend(
   entries: WeightEntry[],
   person: TrackedPerson,
@@ -74,18 +107,43 @@ export function getGoalProgress(latestWeight: number, goal: WeightGoal | null) {
   return Math.max(0, Math.min(100, round(((total - remaining) / total) * 100, 0)))
 }
 
-export function getStreakDays(entries: WeightEntry[]) {
+export function getStreakDays(entries: WeightEntry[], todayKey = getTodayDateKey()) {
   const days = new Set(entries.map((entry) => entry.measured_on))
   if (days.size === 0) return 0
   let streak = 0
-  const cursor = new Date()
+  const latest = getLatestEntry(entries)
+  if (!latest) return 0
+  if (getDayDiff(latest.measured_on, todayKey) > 1) return 0
+  let cursor = latest.measured_on
   for (;;) {
-    const key = cursor.toISOString().slice(0, 10)
-    if (!days.has(key)) break
+    if (!days.has(cursor)) break
     streak += 1
-    cursor.setDate(cursor.getDate() - 1)
+    cursor = getPreviousDateKey(cursor)
   }
   return streak
+}
+
+function getTodayDateKey() {
+  const today = new Date()
+  const year = today.getFullYear()
+  const month = String(today.getMonth() + 1).padStart(2, '0')
+  const day = String(today.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getPreviousDateKey(dateKey: string) {
+  const [year, month, day] = dateKey.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day))
+  date.setUTCDate(date.getUTCDate() - 1)
+  return date.toISOString().slice(0, 10)
+}
+
+function getDayDiff(fromDateKey: string, toDateKey: string) {
+  const [fromYear, fromMonth, fromDay] = fromDateKey.split('-').map(Number)
+  const [toYear, toMonth, toDay] = toDateKey.split('-').map(Number)
+  const from = Date.UTC(fromYear, fromMonth - 1, fromDay)
+  const to = Date.UTC(toYear, toMonth - 1, toDay)
+  return Math.floor((to - from) / (24 * 60 * 60 * 1000))
 }
 
 export function getInsights(
@@ -104,14 +162,20 @@ export function getInsights(
   ]
   if (change7 !== null) {
     insights.push(
-      `最近 7 天体重${change7 >= 0 ? '增加' : '减少'} ${Math.abs(change7).toFixed(
+      `最近 7 天体重${change7 >= 0 ? '增加' : '减少'} ${Math.abs(change7 * 2).toFixed(
         1,
-      )} kg。`,
+      )} 斤。`,
     )
   }
   if (goal) {
     const gap = round(latest.weight_kg - goal.target_weight_kg, 1)
-    insights.push(`距离目标还差 ${Math.abs(gap).toFixed(1)} kg。`)
+    insights.push(`距离目标还差 ${Math.abs(gap * 2).toFixed(1)} 斤。`)
+  }
+  const swing = getLargestDailySwing(entries)
+  if (swing && Math.abs(swing.changeKg) >= 1) {
+    insights.push(
+      `${swing.date} 单日波动 ${Math.abs(swing.changeKg * 2).toFixed(1)} 斤，可能受饮食、水分或称重时间影响。`,
+    )
   }
   if (daysSince > 3) {
     insights.push('已经超过 3 天没有记录，趋势可能会变得不连续。')

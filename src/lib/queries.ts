@@ -3,10 +3,10 @@ import { toast } from 'sonner'
 import {
   addServerWeightEntry,
   createServerTrackedPerson,
+  editServerWeightEntry,
   loadWeightAppData,
-  readProfileHeight,
 } from './server-api'
-import type { AppData, NewTrackedPerson, NewWeightEntry } from './types'
+import type { AppData, NewTrackedPerson, NewWeightEntry, NewWeightGoal, WeightGoal } from './types'
 
 export function useAppData() {
   return useQuery({
@@ -19,13 +19,25 @@ export function useAddWeightEntry() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: addWeightEntry,
-    onSuccess: () => {
-      toast.success('体重记录已保存')
+    onSuccess: (_, input) => {
+      toast.success(input.existingEntryId ? '今日记录已替换' : '体重记录已保存')
       void queryClient.invalidateQueries({ queryKey: ['app-data'] })
     },
     onError: (error) => {
       toast.error(error.message)
     },
+  })
+}
+
+export function useUpsertGoal() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: upsertGoal,
+    onSuccess: () => {
+      toast.success('目标已保存')
+      void queryClient.invalidateQueries({ queryKey: ['app-data'] })
+    },
+    onError: (error) => toast.error(error.message),
   })
 }
 
@@ -42,13 +54,52 @@ export function useUpsertPerson() {
 }
 
 async function loadAppData(): Promise<AppData> {
-  return loadWeightAppData()
+  const data = await loadWeightAppData()
+  return {
+    ...data,
+    goals: readLocalGoals().filter((goal) =>
+      data.people.some((person) => person.id === goal.tracked_person_id),
+    ),
+  }
 }
 
 async function addWeightEntry(input: NewWeightEntry) {
-  await addServerWeightEntry(input, readProfileHeight())
+  if (input.existingEntryId) {
+    await editServerWeightEntry(input)
+    return
+  }
+  await addServerWeightEntry(input)
 }
 
 async function upsertPerson(input: NewTrackedPerson) {
   await createServerTrackedPerson(input)
+}
+
+async function upsertGoal(input: NewWeightGoal) {
+  const goals = readLocalGoals()
+  const nextGoal: WeightGoal = {
+    id: `local-goal-${input.trackedPersonId}`,
+    tracked_person_id: input.trackedPersonId,
+    start_weight_kg: input.startWeightKg,
+    target_weight_kg: input.targetWeightKg,
+    target_on: input.targetOn ?? null,
+    created_at: new Date().toISOString(),
+  }
+  writeLocalGoals([
+    ...goals.filter((goal) => goal.tracked_person_id !== input.trackedPersonId),
+    nextGoal,
+  ])
+}
+
+function readLocalGoals(): WeightGoal[] {
+  try {
+    const raw = localStorage.getItem('weight-goals-v1')
+    return raw ? JSON.parse(raw) as WeightGoal[] : []
+  } catch {
+    return []
+  }
+}
+
+function writeLocalGoals(goals: WeightGoal[]) {
+  localStorage.setItem('weight-goals-v1', JSON.stringify(goals))
 }

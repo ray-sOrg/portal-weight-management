@@ -27,6 +27,7 @@ describe('exportEntriesCsv', () => {
         created_at: '2026-05-15T00:00:00Z',
       },
     ]
+    expect(exportEntriesCsv(entries, people)).toContain('"132.2","66.1"')
     expect(exportEntriesCsv(entries, people)).toContain('"晨起""空腹"""')
   })
 })

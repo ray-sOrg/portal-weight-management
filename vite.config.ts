@@ -5,6 +5,18 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/react') || id.includes('/node_modules/react-dom')) return 'react'
+          if (id.includes('/node_modules/@tanstack/')) return 'tanstack'
+          if (id.includes('/node_modules/recharts')) return 'charts'
+          return undefined
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': {

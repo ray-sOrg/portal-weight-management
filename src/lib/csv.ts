@@ -1,4 +1,5 @@
 import type { AppData, TrackedPerson, WeightEntry } from './types'
+import { kgToJin } from './utils'
 
 export function exportEntriesCsv(
   entries: WeightEntry[],
@@ -6,10 +7,11 @@ export function exportEntriesCsv(
 ) {
   const names = new Map(people.map((person) => [person.id, person.name]))
   const rows = [
-    ['member', 'date', 'weight_kg', 'note'],
+    ['member', 'date', 'weight_jin', 'weight_kg', 'note'],
     ...entries.map((entry) => [
       names.get(entry.tracked_person_id) ?? 'unknown',
       entry.measured_on,
+      kgToJin(entry.weight_kg).toFixed(1),
       entry.weight_kg.toFixed(1),
       entry.note ?? '',
     ]),

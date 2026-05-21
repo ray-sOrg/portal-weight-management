@@ -30,6 +30,7 @@ import { Button, EmptyState, Input, Label, Panel, Stat } from './components/ui'
 import { downloadCsv, downloadJson, exportBackupJson, exportEntriesCsv } from './lib/csv'
 import {
   calculateBmi,
+  filterEntriesByRange,
   getBmiLabel,
   getGoalProgress,
   getInsights,
@@ -37,15 +38,16 @@ import {
   getStreakDays,
   getWeightChange,
   sortEntries,
+  type TrendRange,
 } from './lib/metrics'
-import { useAddWeightEntry, useAppData, useUpsertPerson } from './lib/queries'
+import { useAddWeightEntry, useAppData, useUpsertGoal, useUpsertPerson } from './lib/queries'
 import {
   loginWithPassword,
   logout,
   updateProfile,
 } from './lib/server-api'
 import type { TrackedPerson } from './lib/types'
-import { formatFullDate, formatKg, todayISO } from './lib/utils'
+import { formatFullDate, formatJin, formatKg, jinToKg, kgToJin, todayISO } from './lib/utils'
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -192,12 +194,44 @@ function PersonPicker({
   )
 }
 
+function RangePicker({
+  value,
+  onChange,
+}: {
+  value: TrendRange
+  onChange: (value: TrendRange) => void
+}) {
+  const items: Array<{ value: TrendRange; label: string }> = [
+    { value: '30', label: '30天' },
+    { value: '90', label: '90天' },
+    { value: 'all', label: '全部' },
+  ]
+  return (
+    <div className="inline-grid grid-cols-3 rounded-md border border-line bg-white p-1 text-xs font-medium text-sage-dark">
+      {items.map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          onClick={() => onChange(item.value)}
+          className={`h-8 rounded px-3 transition ${
+            value === item.value ? 'bg-sage-dark text-white shadow-sm' : 'hover:bg-mist'
+          }`}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function DashboardPage() {
   const { data, error, isLoading, person, entries, goal, setPersonId } = useSelectedPerson()
+  const [range, setRange] = useState<TrendRange>('30')
   if (isLoading) return <ScreenLoading />
   if (error) return <LoginPrompt />
   if (!data || !person) return <LoginPrompt />
 
+  const chartEntries = filterEntriesByRange(entries, range)
   const latest = getLatestEntry(entries)
   const bmi = latest ? calculateBmi(latest.weight_kg, person.height_cm) : 0
   const progress = latest ? getGoalProgress(latest.weight_kg, goal) : null
@@ -237,10 +271,10 @@ function DashboardPage() {
 
       <Panel>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-5">
-          <Stat label="最新体重" value={latest ? formatKg(latest.weight_kg) : '--'} detail={latest ? formatFullDate(latest.measured_on) : '暂无记录'} />
+          <Stat label="最新体重" value={latest ? formatJin(latest.weight_kg) : '--'} detail={latest ? formatFullDate(latest.measured_on) : '暂无记录'} />
           <Stat label="BMI" value={latest ? bmi.toFixed(1) : '--'} detail={latest ? getBmiLabel(bmi) : '需要身高和体重'} tone="good" />
           <Stat label="7 天变化" value={formatDelta(getWeightChange(entries, 7))} detail="相对最近可比记录" />
-          <Stat label="目标进度" value={progress === null ? '--' : `${progress}%`} detail={goal ? `${formatKg(goal.target_weight_kg)} 目标` : '未设置目标'} />
+          <Stat label="目标进度" value={progress === null ? '--' : `${progress}%`} detail={goal ? `${formatJin(goal.target_weight_kg)} 目标` : '未设置目标'} />
         </div>
       </Panel>
 
@@ -248,12 +282,15 @@ function DashboardPage() {
         <Panel>
           <div className="mb-3 flex items-start justify-between md:mb-4">
             <div>
-              <h2 className="font-display text-xl font-semibold md:text-2xl">30 天体重趋势</h2>
+              <h2 className="font-display text-xl font-semibold md:text-2xl">体重趋势</h2>
               <p className="mt-1 text-sm text-sage">含三次记录移动均值，减少日波动误读。</p>
             </div>
-            <Activity className="text-sage-dark" size={22} />
+            <div className="flex flex-col items-end gap-2">
+              <Activity className="text-sage-dark" size={22} />
+              <RangePicker value={range} onChange={setRange} />
+            </div>
           </div>
-          {entries.length ? <WeightTrendChart person={person} entries={entries} /> : <EmptyState title="暂无趋势" body="添加至少一条记录后开始绘图。" />}
+          {chartEntries.length ? <WeightTrendChart person={person} entries={chartEntries} /> : <EmptyState title="暂无趋势" body="添加至少一条记录后开始绘图。" />}
         </Panel>
 
         <Panel>
@@ -280,7 +317,7 @@ function EntriesPage() {
   const addEntry = useAddWeightEntry()
   const [form, setForm] = useState({
     measuredOn: todayISO(),
-    weightKg: '',
+    weightJin: '',
     note: '',
   })
 
@@ -291,21 +328,31 @@ function EntriesPage() {
 
   function onSubmit(event: FormEvent) {
     event.preventDefault()
-    const weight = Number(form.weightKg)
-    if (!Number.isFinite(weight) || weight < 20 || weight > 300) return
+    const weightJin = Number(form.weightJin)
+    const weightKg = jinToKg(weightJin)
+    if (!Number.isFinite(weightKg) || weightKg < 20 || weightKg > 300) return
+    const existingEntry = entries.find((entry) => entry.measured_on === form.measuredOn)
+    if (existingEntry) {
+      const shouldReplace = window.confirm(
+        `${selectedPerson.name} 在 ${formatFullDate(form.measuredOn)} 已有记录，是否替换为 ${weightJin.toFixed(1)} 斤？`,
+      )
+      if (!shouldReplace) return
+    }
     addEntry.mutate({
       trackedPersonId: selectedPerson.id,
       measuredOn: form.measuredOn,
-      weightKg: weight,
+      weightKg,
+      heightCm: selectedPerson.height_cm,
+      existingEntryId: existingEntry?.id,
       note: form.note,
     })
-    setForm((current) => ({ ...current, weightKg: '', note: '' }))
+    setForm((current) => ({ ...current, weightJin: '', note: '' }))
   }
 
   return (
     <div className="grid gap-4 lg:grid-cols-[.8fr_1.2fr] lg:gap-6">
       <Panel>
-        <PageSectionTitle title="快速记录" body="默认记录 kg，建议固定在同一时间段称重。" />
+        <PageSectionTitle title="快速记录" body="按斤输入，保存后自动换算用于 BMI 和趋势计算。" />
         <form className="mt-5 space-y-4" onSubmit={onSubmit}>
           <div className="space-y-2">
             <Label>成员</Label>
@@ -316,16 +363,27 @@ function EntriesPage() {
             <Input type="date" value={form.measuredOn} onChange={(event) => setForm({ ...form, measuredOn: event.target.value })} />
           </div>
           <div className="space-y-2">
-            <Label>体重 kg</Label>
-            <Input inputMode="decimal" placeholder="66.1" value={form.weightKg} onChange={(event) => setForm({ ...form, weightKg: event.target.value })} />
+            <Label>体重</Label>
+            <div className="relative">
+              <Input
+                className="pr-14"
+                inputMode="decimal"
+                placeholder="132.2"
+                value={form.weightJin}
+                onChange={(event) => setForm({ ...form, weightJin: event.target.value })}
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm font-medium text-sage-dark">
+                斤
+              </span>
+            </div>
           </div>
           <div className="space-y-2">
             <Label>备注</Label>
             <Input placeholder="晨起空腹、运动后等" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} />
           </div>
           <Button type="submit" disabled={addEntry.isPending} className="w-full">
-            <Plus size={16} />
-            保存记录
+            {addEntry.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Plus size={16} />}
+            {addEntry.isPending ? '保存中...' : '保存记录'}
           </Button>
         </form>
       </Panel>
@@ -347,7 +405,10 @@ function EntriesPage() {
                 sortEntries(entries).reverse().map((entry) => (
                   <tr key={entry.id} className="border-t border-line">
                     <td className="px-3 py-3 sm:px-4">{formatFullDate(entry.measured_on)}</td>
-                    <td className="px-3 py-3 tabular-nums sm:px-4">{formatKg(entry.weight_kg)}</td>
+                    <td className="px-3 py-3 tabular-nums sm:px-4">
+                      <span className="block">{formatJin(entry.weight_kg)}</span>
+                      <span className="mt-0.5 block text-xs text-sage">{formatKg(entry.weight_kg)}</span>
+                    </td>
                     <td className="px-3 py-3 tabular-nums sm:px-4">{calculateBmi(entry.weight_kg, selectedPerson.height_cm).toFixed(1)}</td>
                     <td className="hidden px-3 py-3 text-sage sm:table-cell sm:px-4">{entry.note ?? '—'}</td>
                   </tr>
@@ -369,9 +430,11 @@ function EntriesPage() {
 
 function ReportsPage() {
   const { data, error, isLoading, person, entries, setPersonId } = useSelectedPerson()
+  const [range, setRange] = useState<TrendRange>('30')
   if (isLoading) return <ScreenLoading />
   if (error) return <LoginPrompt />
   if (!data || !person) return <LoginPrompt />
+  const chartEntries = filterEntriesByRange(entries, range)
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -379,16 +442,21 @@ function ReportsPage() {
         eyebrow="Reports"
         title="趋势、BMI 和家庭对比"
         body="用少量图表覆盖最重要的变化：方向、速度、区间和成员差异。"
-        action={<PersonPicker people={data.people} value={person.id} onChange={setPersonId} />}
+        action={
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <RangePicker value={range} onChange={setRange} />
+            <PersonPicker people={data.people} value={person.id} onChange={setPersonId} />
+          </div>
+        }
       />
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel>
           <PageSectionTitle title="体重趋势" body="原始记录与移动均值" />
-          {entries.length ? <WeightTrendChart person={person} entries={entries} /> : <EmptyState title="暂无趋势" body="添加体重记录后，这里会显示变化曲线。" />}
+          {chartEntries.length ? <WeightTrendChart person={person} entries={chartEntries} /> : <EmptyState title="暂无趋势" body="添加体重记录后，这里会显示变化曲线。" />}
         </Panel>
         <Panel>
           <PageSectionTitle title="BMI 区间变化" body="基于成员身高自动计算" />
-          {entries.length ? <BmiChart person={person} entries={entries} /> : <EmptyState title="暂无 BMI 数据" body="BMI 会根据体重和身高自动计算。" />}
+          {chartEntries.length ? <BmiChart person={person} entries={chartEntries} /> : <EmptyState title="暂无 BMI 数据" body="BMI 会根据体重和身高自动计算。" />}
         </Panel>
       </div>
       <Panel>
@@ -511,6 +579,17 @@ function SettingsPage() {
   const queryClient = useQueryClient()
   const isSignedIn = Boolean(data && !error)
   const currentPerson = data?.people[0]
+  const currentPersonEntryCount =
+    data && currentPerson
+      ? data.entries.filter((entry) => entry.tracked_person_id === currentPerson.id).length
+      : 0
+  const currentPersonEntries = useMemo(
+    () =>
+      data && currentPerson
+        ? data.entries.filter((entry) => entry.tracked_person_id === currentPerson.id)
+        : [],
+    [data, currentPerson],
+  )
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -518,13 +597,33 @@ function SettingsPage() {
   const [birthDate, setBirthDate] = useState('')
   const [authMessage, setAuthMessage] = useState('')
   const [profileMessage, setProfileMessage] = useState('')
+  const [goalPersonId, setGoalPersonId] = useState('')
+  const [goalWeightJin, setGoalWeightJin] = useState('')
+  const [goalDate, setGoalDate] = useState('')
   const [isSigningIn, setIsSigningIn] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const upsertGoal = useUpsertGoal()
   const effectiveHeightCm = heightCm || String(currentPerson?.height_cm ?? 170)
   const effectiveBirthDate = birthDate || currentPerson?.birth_date || ''
   const effectiveDisplayName = displayName || currentPerson?.name || ''
-  const csv = useMemo(
+  const selectedGoalPerson =
+    data?.people.find((person) => person.id === goalPersonId) ?? currentPerson
+  const selectedGoal = selectedGoalPerson
+    ? data?.goals.find((goal) => goal.tracked_person_id === selectedGoalPerson.id)
+    : null
+  const selectedGoalEntries = selectedGoalPerson
+    ? data?.entries.filter((entry) => entry.tracked_person_id === selectedGoalPerson.id) ?? []
+    : []
+  const latestGoalEntry = getLatestEntry(selectedGoalEntries)
+  const effectiveGoalWeightJin =
+    goalWeightJin || (selectedGoal ? kgToJin(selectedGoal.target_weight_kg).toFixed(1) : '')
+  const effectiveGoalDate = goalDate || selectedGoal?.target_on || ''
+  const personalCsv = useMemo(
+    () => (data && currentPerson ? exportEntriesCsv(currentPersonEntries, [currentPerson]) : ''),
+    [currentPerson, currentPersonEntries, data],
+  )
+  const householdCsv = useMemo(
     () => (data ? exportEntriesCsv(data.entries, data.people) : ''),
     [data],
   )
@@ -607,6 +706,21 @@ function SettingsPage() {
       })
   }
 
+  function saveGoal(event: FormEvent) {
+    event.preventDefault()
+    if (!selectedGoalPerson) return
+    const targetWeightKg = jinToKg(Number(effectiveGoalWeightJin))
+    if (!Number.isFinite(targetWeightKg) || targetWeightKg < 20 || targetWeightKg > 300) return
+    upsertGoal.mutate({
+      trackedPersonId: selectedGoalPerson.id,
+      startWeightKg: latestGoalEntry?.weight_kg ?? selectedGoal?.start_weight_kg ?? targetWeightKg,
+      targetWeightKg,
+      targetOn: effectiveGoalDate || null,
+    })
+    setGoalWeightJin(targetWeightKg ? kgToJin(targetWeightKg).toFixed(1) : '')
+    setGoalDate(effectiveGoalDate)
+  }
+
   return (
     <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
       <Panel>
@@ -622,7 +736,7 @@ function SettingsPage() {
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-ink">{currentPerson?.name ?? '已登录账号'}</p>
-                <p className="text-xs text-sage">{data?.entries.length ?? 0} 条体重记录</p>
+                <p className="text-xs text-sage">{currentPersonEntryCount} 条体重记录</p>
               </div>
             </div>
             <Button type="button" variant="secondary" className="w-full" onClick={signOut} disabled={isSigningOut}>
@@ -701,19 +815,84 @@ function SettingsPage() {
         {profileMessage ? <p className="mt-3 text-sm text-sage-dark">{profileMessage}</p> : null}
       </Panel>
       <Panel>
-        <PageSectionTitle title="数据管理" body="导出体重记录，便于备份、分析或后续迁移。" />
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <Button variant="secondary" onClick={() => downloadCsv('weight-entries.csv', csv)} disabled={!data}>
-            <Download size={16} />
-            导出 CSV
-          </Button>
-          <Button variant="secondary" onClick={() => downloadJson('weight-backup.json', backupJson)} disabled={!data}>
-            <Download size={16} />
-            导出备份
-          </Button>
+        <PageSectionTitle
+          title="目标设置"
+          body={isSignedIn ? '给自己或家庭成员设置目标体重，仪表盘会自动计算进度。' : '登录后可以设置目标体重。'}
+        />
+        {isSignedIn && data && selectedGoalPerson ? (
+          <form className="mt-5 grid gap-3 sm:grid-cols-2" onSubmit={saveGoal}>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>成员</Label>
+              <PersonPicker
+                people={data.people}
+                value={selectedGoalPerson.id}
+                onChange={(value) => {
+                  setGoalPersonId(value)
+                  setGoalWeightJin('')
+                  setGoalDate('')
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>目标体重</Label>
+              <div className="relative">
+                <Input
+                  className="pr-14"
+                  inputMode="decimal"
+                  placeholder="130.0"
+                  value={effectiveGoalWeightJin}
+                  onChange={(event) => setGoalWeightJin(event.target.value)}
+                />
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm font-medium text-sage-dark">
+                  斤
+                </span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>目标日期</Label>
+              <Input
+                type="date"
+                value={effectiveGoalDate}
+                onChange={(event) => setGoalDate(event.target.value)}
+              />
+            </div>
+            <Button className="sm:col-span-2" type="submit" disabled={upsertGoal.isPending || !effectiveGoalWeightJin}>
+              {upsertGoal.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Scale size={16} />}
+              {upsertGoal.isPending ? '保存中...' : '保存目标'}
+            </Button>
+          </form>
+        ) : (
+          <EmptyState title="请先登录" body="登录后可以为家庭成员设置目标体重。" />
+        )}
+      </Panel>
+      <Panel>
+        <PageSectionTitle title="数据管理" body="本人和家庭数据分开导出，避免成员记录混在一起。" />
+        <div className="mt-5 grid gap-3">
+          <div className="rounded-md border border-line bg-mist/50 p-3">
+            <p className="text-sm font-semibold text-ink">本人数据</p>
+            <p className="mt-1 text-xs text-sage">{currentPersonEntryCount} 条记录，CSV 包含斤和 kg。</p>
+            <Button className="mt-3 w-full" variant="secondary" onClick={() => downloadCsv('my-weight-entries.csv', personalCsv)} disabled={!data || !currentPerson}>
+              <Download size={16} />
+              导出本人 CSV
+            </Button>
+          </div>
+          <div className="rounded-md border border-line bg-white p-3">
+            <p className="text-sm font-semibold text-ink">家庭数据</p>
+            <p className="mt-1 text-xs text-sage">{data?.entries.length ?? 0} 条记录，包含所有家庭成员。</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Button variant="secondary" onClick={() => downloadCsv('household-weight-entries.csv', householdCsv)} disabled={!data}>
+                <Download size={16} />
+                导出家庭 CSV
+              </Button>
+              <Button variant="secondary" onClick={() => downloadJson('weight-backup.json', backupJson)} disabled={!data}>
+                <Download size={16} />
+                导出备份
+              </Button>
+            </div>
+          </div>
         </div>
         <p className="mt-3 text-xs leading-5 text-sage">
-          CSV 适合表格分析；备份文件包含个人资料、记录和目标数据。
+          CSV 适合表格分析；备份文件包含家庭成员、记录和目标数据。
         </p>
       </Panel>
     </div>
@@ -788,6 +967,7 @@ function LoginPrompt() {
 
 function formatDelta(value: number | null) {
   if (value === null) return '--'
-  if (value === 0) return '0.0 kg'
-  return `${value > 0 ? '+' : ''}${value.toFixed(1)} kg`
+  const jin = value * 2
+  if (jin === 0) return '0.0 斤'
+  return `${jin > 0 ? '+' : ''}${jin.toFixed(1)} 斤`
 }

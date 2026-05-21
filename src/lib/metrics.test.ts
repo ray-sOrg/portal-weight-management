@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   buildTrend,
   calculateBmi,
+  filterEntriesByRange,
   getBmiLabel,
   getGoalProgress,
   getLatestEntry,
+  getLargestDailySwing,
   getStreakDays,
   getWeightChange,
 } from './metrics'
@@ -57,6 +59,31 @@ describe('metrics', () => {
     expect(trend.at(-1)?.bmi).toBe(23.6)
   })
 
+  it('filters trend entries by recent range', () => {
+    expect(filterEntriesByRange(entries, '30')).toHaveLength(3)
+    expect(filterEntriesByRange(entries, 'all')).toHaveLength(3)
+    expect(
+      filterEntriesByRange(
+        [
+        entry('2026-01-01', 72),
+        entry('2026-05-01', 70),
+        entry('2026-05-15', 68),
+        ],
+        '30',
+      ).map((item) => item.measured_on),
+    ).toEqual(['2026-05-01', '2026-05-15'])
+  })
+
+  it('finds the largest daily swing', () => {
+    expect(
+      getLargestDailySwing([
+        entry('2026-05-01', 70),
+        entry('2026-05-02', 69.2),
+        entry('2026-05-03', 71),
+      ]),
+    ).toEqual({ date: '2026-05-03', changeKg: 1.8 })
+  })
+
   it('calculates goal progress', () => {
     const goal: WeightGoal = {
       id: 'g1',
@@ -69,8 +96,28 @@ describe('metrics', () => {
     expect(getGoalProgress(68, goal)).toBe(50)
   })
 
-  it('returns a positive streak when today has an entry', () => {
-    const today = new Date().toISOString().slice(0, 10)
-    expect(getStreakDays([entry(today, 68)])).toBe(1)
+  it('counts streak from the latest recorded day', () => {
+    expect(
+      getStreakDays([
+        entry('2026-05-18', 68.4),
+        entry('2026-05-19', 68.2),
+        entry('2026-05-20', 68),
+      ], '2026-05-21'),
+    ).toBe(3)
+  })
+
+  it('stops streak at date gaps before the latest entry', () => {
+    expect(
+      getStreakDays([
+        entry('2026-05-17', 68.6),
+        entry('2026-05-19', 68.2),
+        entry('2026-05-20', 68),
+      ], '2026-05-21'),
+    ).toBe(2)
+  })
+
+  it('keeps streak alive until a full day is missed', () => {
+    expect(getStreakDays([entry('2026-05-20', 68)], '2026-05-21')).toBe(1)
+    expect(getStreakDays([entry('2026-05-19', 68)], '2026-05-21')).toBe(0)
   })
 })
