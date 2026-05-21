@@ -4,10 +4,17 @@ import {
   calculateBmi,
   filterEntriesByRange,
   getBmiLabel,
+  getBestGoalProgressFromEntries,
   getGoalProgress,
+  getGoalProgressFromEntries,
+  getRangeSummary,
   getLatestEntry,
+  getBmiDistribution,
+  getLongestStreakDays,
+  getPhaseComparison,
   getLargestDailySwing,
   getStreakDays,
+  getStabilityLabel,
   getWeightChange,
 } from './metrics'
 import type { TrackedPerson, WeightEntry, WeightGoal } from './types'
@@ -84,6 +91,39 @@ describe('metrics', () => {
     ).toEqual({ date: '2026-05-03', changeKg: 1.8 })
   })
 
+  it('summarizes range quality and velocity', () => {
+    const summary = getRangeSummary([
+      entry('2026-05-01', 70),
+      entry('2026-05-02', 69.5),
+      entry('2026-05-04', 69),
+    ], person)
+
+    expect(summary?.count).toBe(3)
+    expect(summary?.spanDays).toBe(4)
+    expect(summary?.recordRate).toBe(75)
+    expect(summary?.averageWeightKg).toBe(69.5)
+    expect(summary?.changeKg).toBe(-1)
+    expect(summary?.projected30DayChangeKg).toBe(-10)
+  })
+
+  it('builds interpretive report metrics', () => {
+    const reportEntries = [
+      entry('2026-05-01', 70),
+      entry('2026-05-02', 69.5),
+      entry('2026-05-04', 69),
+      entry('2026-05-05', 68.5),
+    ]
+
+    expect(getLongestStreakDays(reportEntries)).toBe(2)
+    expect(getPhaseComparison(reportEntries)).toEqual({
+      firstAverageKg: 69.8,
+      secondAverageKg: 68.8,
+      changeKg: -1,
+    })
+    expect(getBmiDistribution(reportEntries, person).healthy).toBe(50)
+    expect(getStabilityLabel(0.2)).toBe('很稳定')
+  })
+
   it('calculates goal progress', () => {
     const goal: WeightGoal = {
       id: 'g1',
@@ -94,6 +134,18 @@ describe('metrics', () => {
       created_at: '2026-05-01T00:00:00Z',
     }
     expect(getGoalProgress(68, goal)).toBe(50)
+    expect(getGoalProgressFromEntries([
+      entry('2026-05-01', 72),
+      entry('2026-05-20', 68),
+    ], goal)).toBe(67)
+    expect(getBestGoalProgressFromEntries([
+      entry('2026-05-01', 72),
+      entry('2026-05-10', 67),
+      entry('2026-05-20', 68),
+    ], goal)).toMatchObject({
+      date: '2026-05-10',
+      progress: 83,
+    })
   })
 
   it('counts streak from the latest recorded day', () => {

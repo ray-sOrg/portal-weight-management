@@ -32,10 +32,17 @@ import {
   calculateBmi,
   filterEntriesByRange,
   getBmiLabel,
-  getGoalProgress,
+  getFirstEntry,
+  getBestGoalProgressFromEntries,
+  getGoalProgressFromEntries,
   getInsights,
+  getRangeSummary,
   getLatestEntry,
+  getBmiDistribution,
+  getLongestStreakDays,
+  getPhaseComparison,
   getStreakDays,
+  getStabilityLabel,
   getWeightChange,
   sortEntries,
   type TrendRange,
@@ -234,7 +241,14 @@ function DashboardPage() {
   const chartEntries = filterEntriesByRange(entries, range)
   const latest = getLatestEntry(entries)
   const bmi = latest ? calculateBmi(latest.weight_kg, person.height_cm) : 0
-  const progress = latest ? getGoalProgress(latest.weight_kg, goal) : null
+  const first = getFirstEntry(entries)
+  const progress = getGoalProgressFromEntries(entries, goal)
+  const bestProgress = getBestGoalProgressFromEntries(entries, goal)
+  const goalDetail = goal && latest && first
+    ? `${formatJin(Math.abs(first.weight_kg - latest.weight_kg))} / ${formatJin(Math.abs(first.weight_kg - goal.target_weight_kg))}`
+    : goal
+      ? `${formatJin(goal.target_weight_kg)} 目标`
+      : '未设置目标'
   const insights = getInsights(entries, goal, person)
 
   return (
@@ -274,7 +288,12 @@ function DashboardPage() {
           <Stat label="最新体重" value={latest ? formatJin(latest.weight_kg) : '--'} detail={latest ? formatFullDate(latest.measured_on) : '暂无记录'} />
           <Stat label="BMI" value={latest ? bmi.toFixed(1) : '--'} detail={latest ? getBmiLabel(bmi) : '需要身高和体重'} tone="good" />
           <Stat label="7 天变化" value={formatDelta(getWeightChange(entries, 7))} detail="相对最近可比记录" />
-          <Stat label="目标进度" value={progress === null ? '--' : `${progress}%`} detail={goal ? `${formatJin(goal.target_weight_kg)} 目标` : '未设置目标'} />
+          <GoalProgressStat
+            label="目标进度"
+            value={progress === null ? '--' : `${progress}%`}
+            detail={goalDetail}
+            best={bestProgress ? `历史最佳 ${bestProgress.progress}%` : undefined}
+          />
         </div>
       </Panel>
 
@@ -429,12 +448,19 @@ function EntriesPage() {
 }
 
 function ReportsPage() {
-  const { data, error, isLoading, person, entries, setPersonId } = useSelectedPerson()
+  const { data, error, isLoading, person, entries, goal, setPersonId } = useSelectedPerson()
   const [range, setRange] = useState<TrendRange>('30')
   if (isLoading) return <ScreenLoading />
   if (error) return <LoginPrompt />
   if (!data || !person) return <LoginPrompt />
   const chartEntries = filterEntriesByRange(entries, range)
+  const summary = getRangeSummary(chartEntries, person)
+  const phase = getPhaseComparison(chartEntries)
+  const bmiDistribution = getBmiDistribution(chartEntries, person)
+  const longestStreak = getLongestStreakDays(chartEntries)
+  const latest = getLatestEntry(entries)
+  const goalRemainingKg =
+    goal && latest ? Math.abs(latest.weight_kg - goal.target_weight_kg) : null
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -449,6 +475,47 @@ function ReportsPage() {
           </div>
         }
       />
+      <Panel>
+        <PageSectionTitle title="区间概览" body="把这一段时间的记录质量、波动和趋势速度拆开看。" />
+        {summary ? (
+          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <MetricTile
+              label="记录率"
+              value={`${summary.recordRate}%`}
+              detail={`${summary.count}/${summary.spanDays} 天`}
+            />
+            <MetricTile
+              label="区间均重"
+              value={formatJin(summary.averageWeightKg)}
+              detail="记录平均值"
+            />
+            <MetricTile
+              label="最高 / 最低"
+              value={`${kgToJin(summary.maxWeightKg).toFixed(1)} / ${kgToJin(summary.minWeightKg).toFixed(1)}`}
+              detail={`${summary.maxDate} / ${summary.minDate}`}
+            />
+            <MetricTile
+              label="区间变化"
+              value={formatDelta(summary.changeKg)}
+              detail="首条到最新"
+              tone={summary.changeKg <= 0 ? 'good' : 'warn'}
+            />
+            <MetricTile
+              label="日均波动"
+              value={formatJin(summary.averageSwingKg)}
+              detail="相邻记录平均波动"
+            />
+            <MetricTile
+              label="30天预测"
+              value={formatDelta(summary.projected30DayChangeKg)}
+              detail={`当前 BMI ${summary.latestBmi.toFixed(1)} · ${summary.bmiLabel}`}
+              tone={summary.projected30DayChangeKg <= 0 ? 'good' : 'warn'}
+            />
+          </div>
+        ) : (
+          <EmptyState title="暂无概览" body="当前区间没有记录，换一个范围或先添加体重记录。" />
+        )}
+      </Panel>
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel>
           <PageSectionTitle title="体重趋势" body="原始记录与移动均值" />
@@ -457,6 +524,58 @@ function ReportsPage() {
         <Panel>
           <PageSectionTitle title="BMI 区间变化" body="基于成员身高自动计算" />
           {chartEntries.length ? <BmiChart person={person} entries={chartEntries} /> : <EmptyState title="暂无 BMI 数据" body="BMI 会根据体重和身高自动计算。" />}
+        </Panel>
+      </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Panel>
+          <PageSectionTitle title="趋势解读" body="把区间切成前后两段，看变化是不是真的在发生。" />
+          {phase && summary ? (
+            <div className="mt-5 space-y-3">
+              <InsightRow
+                label="前半段均重"
+                value={formatJin(phase.firstAverageKg)}
+                detail="区间前半部分记录均值"
+              />
+              <InsightRow
+                label="后半段均重"
+                value={formatJin(phase.secondAverageKg)}
+                detail={`比前半段${phase.changeKg <= 0 ? '少' : '多'} ${Math.abs(phase.changeKg * 2).toFixed(1)} 斤`}
+                tone={phase.changeKg <= 0 ? 'good' : 'warn'}
+              />
+              <InsightRow
+                label="稳定性"
+                value={getStabilityLabel(summary.averageSwingKg)}
+                detail={`日均波动 ${kgToJin(summary.averageSwingKg).toFixed(1)} 斤`}
+              />
+              <InsightRow
+                label="最长连续"
+                value={`${longestStreak} 天`}
+                detail="当前筛选区间内最长连续记录"
+              />
+            </div>
+          ) : (
+            <EmptyState title="数据还不够" body="至少 4 条记录后，可以看到前后阶段对比。" />
+          )}
+        </Panel>
+        <Panel>
+          <PageSectionTitle title="健康区间" body="看这段时间 BMI 分布，以及距离目标还差多少。" />
+          <div className="mt-5 space-y-4">
+            <div className="space-y-2">
+              <BmiBand label="偏低" value={bmiDistribution.low} />
+              <BmiBand label="健康" value={bmiDistribution.healthy} tone="good" />
+              <BmiBand label="偏高" value={bmiDistribution.high} tone="warn" />
+              <BmiBand label="肥胖" value={bmiDistribution.obese} tone="danger" />
+            </div>
+            <div className="rounded-md border border-line bg-mist/60 p-3">
+              <p className="text-xs font-medium text-sage-dark">目标剩余</p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-ink">
+                {goalRemainingKg === null ? '--' : `${(goalRemainingKg * 2).toFixed(1)} 斤`}
+              </p>
+              <p className="mt-1 text-xs text-sage">
+                {goal ? `目标 ${formatJin(goal.target_weight_kg)}` : '还没有设置目标体重'}
+              </p>
+            </div>
+          </div>
         </Panel>
       </div>
       <Panel>
@@ -615,7 +734,7 @@ function SettingsPage() {
   const selectedGoalEntries = selectedGoalPerson
     ? data?.entries.filter((entry) => entry.tracked_person_id === selectedGoalPerson.id) ?? []
     : []
-  const latestGoalEntry = getLatestEntry(selectedGoalEntries)
+  const firstGoalEntry = getFirstEntry(selectedGoalEntries)
   const effectiveGoalWeightJin =
     goalWeightJin || (selectedGoal ? kgToJin(selectedGoal.target_weight_kg).toFixed(1) : '')
   const effectiveGoalDate = goalDate || selectedGoal?.target_on || ''
@@ -713,7 +832,7 @@ function SettingsPage() {
     if (!Number.isFinite(targetWeightKg) || targetWeightKg < 20 || targetWeightKg > 300) return
     upsertGoal.mutate({
       trackedPersonId: selectedGoalPerson.id,
-      startWeightKg: latestGoalEntry?.weight_kg ?? selectedGoal?.start_weight_kg ?? targetWeightKg,
+      startWeightKg: firstGoalEntry?.weight_kg ?? selectedGoal?.start_weight_kg ?? targetWeightKg,
       targetWeightKg,
       targetOn: effectiveGoalDate || null,
     })
@@ -929,6 +1048,115 @@ function PageSectionTitle({ title, body }: { title: string; body: string }) {
     <div>
       <h2 className="font-display text-xl font-semibold text-ink md:text-2xl">{title}</h2>
       <p className="mt-1 text-sm leading-6 text-sage">{body}</p>
+    </div>
+  )
+}
+
+function MetricTile({
+  label,
+  value,
+  detail,
+  tone = 'default',
+}: {
+  label: string
+  value: string
+  detail: string
+  tone?: 'default' | 'good' | 'warn'
+}) {
+  return (
+    <div className="min-h-28 rounded-md border border-line bg-white p-3">
+      <p className="text-xs font-medium text-sage-dark">{label}</p>
+      <p
+        className={`mt-2 text-xl font-semibold leading-tight tabular-nums ${
+          tone === 'good' ? 'text-sage-dark' : tone === 'warn' ? 'text-coral' : 'text-ink'
+        }`}
+      >
+        {value}
+      </p>
+      <p className="mt-2 text-xs leading-4 text-sage">{detail}</p>
+    </div>
+  )
+}
+
+function GoalProgressStat({
+  label,
+  value,
+  detail,
+  best,
+}: {
+  label: string
+  value: string
+  detail: string
+  best?: string
+}) {
+  return (
+    <div className="rounded-md border border-line bg-white p-3 shadow-sm md:border-l md:border-y-0 md:border-r-0 md:bg-transparent md:p-0 md:pl-4 md:shadow-none">
+      <p className="text-xs font-medium text-sage-dark">{label}</p>
+      <p className="mt-1 text-[1.65rem] font-semibold leading-none tabular-nums text-ink md:text-2xl md:leading-normal">
+        {value}
+      </p>
+      <div className="mt-2 flex items-end justify-between gap-2 text-xs leading-4 md:mt-1">
+        <span className="min-w-0 text-sage">{detail}</span>
+        {best ? <span className="shrink-0 text-right text-sage">{best}</span> : null}
+      </div>
+    </div>
+  )
+}
+
+function InsightRow({
+  label,
+  value,
+  detail,
+  tone = 'default',
+}: {
+  label: string
+  value: string
+  detail: string
+  tone?: 'default' | 'good' | 'warn'
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-md border border-line bg-white p-3">
+      <div>
+        <p className="text-xs font-medium text-sage-dark">{label}</p>
+        <p className="mt-1 text-xs leading-5 text-sage">{detail}</p>
+      </div>
+      <p
+        className={`shrink-0 text-right text-lg font-semibold tabular-nums ${
+          tone === 'good' ? 'text-sage-dark' : tone === 'warn' ? 'text-coral' : 'text-ink'
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  )
+}
+
+function BmiBand({
+  label,
+  value,
+  tone = 'default',
+}: {
+  label: string
+  value: number
+  tone?: 'default' | 'good' | 'warn' | 'danger'
+}) {
+  const color =
+    tone === 'good'
+      ? 'bg-sage-dark'
+      : tone === 'warn'
+        ? 'bg-gold'
+        : tone === 'danger'
+          ? 'bg-coral'
+          : 'bg-sage'
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs">
+        <span className="font-medium text-sage-dark">{label}</span>
+        <span className="tabular-nums text-sage">{value}%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-mist">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${value}%` }} />
+      </div>
     </div>
   )
 }

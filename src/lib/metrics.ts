@@ -35,6 +35,10 @@ export function getLatestEntry(entries: WeightEntry[]) {
   return sortEntries(entries).at(-1) ?? null
 }
 
+export function getFirstEntry(entries: WeightEntry[]) {
+  return sortEntries(entries)[0] ?? null
+}
+
 export function getWeightChange(entries: WeightEntry[], days: number) {
   const ordered = sortEntries(entries)
   const latest = ordered.at(-1)
@@ -82,6 +86,122 @@ export function getLargestDailySwing(entries: WeightEntry[]) {
   return largest
 }
 
+export function getRangeSummary(entries: WeightEntry[], person: TrackedPerson) {
+  const ordered = sortEntries(entries)
+  const first = ordered[0]
+  const latest = ordered.at(-1)
+  if (!first || !latest) return null
+
+  const spanDays = Math.max(1, getDayDiff(first.measured_on, latest.measured_on) + 1)
+  const totalWeight = ordered.reduce((total, entry) => total + entry.weight_kg, 0)
+  const minEntry = ordered.reduce((min, entry) =>
+    entry.weight_kg < min.weight_kg ? entry : min,
+  )
+  const maxEntry = ordered.reduce((max, entry) =>
+    entry.weight_kg > max.weight_kg ? entry : max,
+  )
+  const consecutiveChanges = ordered
+    .slice(1)
+    .map((entry, index) => {
+      const previous = ordered[index]
+      const dayDiff = getDayDiff(previous.measured_on, entry.measured_on)
+      return dayDiff === 1 ? Math.abs(entry.weight_kg - previous.weight_kg) : null
+    })
+    .filter((value): value is number => value !== null)
+  const averageSwing =
+    consecutiveChanges.length > 0
+      ? consecutiveChanges.reduce((total, value) => total + value, 0) /
+        consecutiveChanges.length
+      : 0
+  const changeKg = latest.weight_kg - first.weight_kg
+  const projected30DayChangeKg =
+    spanDays > 1 ? (changeKg / (spanDays - 1)) * 30 : 0
+  const latestBmi = calculateBmi(latest.weight_kg, person.height_cm)
+
+  return {
+    count: ordered.length,
+    spanDays,
+    recordRate: round((ordered.length / spanDays) * 100, 0),
+    averageWeightKg: round(totalWeight / ordered.length, 1),
+    minWeightKg: minEntry.weight_kg,
+    minDate: minEntry.measured_on,
+    maxWeightKg: maxEntry.weight_kg,
+    maxDate: maxEntry.measured_on,
+    changeKg: round(changeKg, 1),
+    averageSwingKg: round(averageSwing, 1),
+    projected30DayChangeKg: round(projected30DayChangeKg, 1),
+    latestBmi,
+    bmiLabel: getBmiLabel(latestBmi),
+  }
+}
+
+export function getLongestStreakDays(entries: WeightEntry[]) {
+  const ordered = sortEntries(entries)
+  if (ordered.length === 0) return 0
+  let longest = 1
+  let current = 1
+  for (let index = 1; index < ordered.length; index += 1) {
+    const previous = ordered[index - 1]
+    const entry = ordered[index]
+    if (getDayDiff(previous.measured_on, entry.measured_on) === 1) {
+      current += 1
+    } else {
+      current = 1
+    }
+    longest = Math.max(longest, current)
+  }
+  return longest
+}
+
+export function getPhaseComparison(entries: WeightEntry[]) {
+  const ordered = sortEntries(entries)
+  if (ordered.length < 4) return null
+  const midpoint = Math.floor(ordered.length / 2)
+  const firstHalf = ordered.slice(0, midpoint)
+  const secondHalf = ordered.slice(midpoint)
+  const firstAverage = averageWeight(firstHalf)
+  const secondAverage = averageWeight(secondHalf)
+  return {
+    firstAverageKg: round(firstAverage, 1),
+    secondAverageKg: round(secondAverage, 1),
+    changeKg: round(secondAverage - firstAverage, 1),
+  }
+}
+
+export function getBmiDistribution(entries: WeightEntry[], person: TrackedPerson) {
+  const total = entries.length
+  const counts = {
+    low: 0,
+    healthy: 0,
+    high: 0,
+    obese: 0,
+  }
+  for (const entry of entries) {
+    const bmi = calculateBmi(entry.weight_kg, person.height_cm)
+    if (bmi < 18.5) counts.low += 1
+    else if (bmi < 24) counts.healthy += 1
+    else if (bmi < 28) counts.high += 1
+    else counts.obese += 1
+  }
+  return {
+    low: total ? round((counts.low / total) * 100, 0) : 0,
+    healthy: total ? round((counts.healthy / total) * 100, 0) : 0,
+    high: total ? round((counts.high / total) * 100, 0) : 0,
+    obese: total ? round((counts.obese / total) * 100, 0) : 0,
+  }
+}
+
+export function getStabilityLabel(averageSwingKg: number) {
+  if (averageSwingKg < 0.3) return '很稳定'
+  if (averageSwingKg < 0.6) return '正常波动'
+  if (averageSwingKg < 1) return '波动偏大'
+  return '波动明显'
+}
+
+function averageWeight(entries: WeightEntry[]) {
+  return entries.reduce((total, entry) => total + entry.weight_kg, 0) / entries.length
+}
+
 export function buildTrend(
   entries: WeightEntry[],
   person: TrackedPerson,
@@ -104,6 +224,49 @@ export function getGoalProgress(latestWeight: number, goal: WeightGoal | null) {
   const total = Math.abs(goal.start_weight_kg - goal.target_weight_kg)
   if (total === 0) return 100
   const remaining = Math.abs(latestWeight - goal.target_weight_kg)
+  return Math.max(0, Math.min(100, round(((total - remaining) / total) * 100, 0)))
+}
+
+export function getGoalProgressFromEntries(entries: WeightEntry[], goal: WeightGoal | null) {
+  const first = getFirstEntry(entries)
+  const latest = getLatestEntry(entries)
+  if (!first || !latest || !goal) return null
+  return getGoalProgressFromWeights(
+    first.weight_kg,
+    latest.weight_kg,
+    goal.target_weight_kg,
+  )
+}
+
+export function getBestGoalProgressFromEntries(entries: WeightEntry[], goal: WeightGoal | null) {
+  const first = getFirstEntry(entries)
+  if (!first || !goal) return null
+  const targetIsLower = goal.target_weight_kg < first.weight_kg
+  const best = sortEntries(entries).reduce((bestEntry, entry) => {
+    if (targetIsLower) {
+      return entry.weight_kg < bestEntry.weight_kg ? entry : bestEntry
+    }
+    return entry.weight_kg > bestEntry.weight_kg ? entry : bestEntry
+  }, first)
+  return {
+    date: best.measured_on,
+    weightKg: best.weight_kg,
+    progress: getGoalProgressFromWeights(
+      first.weight_kg,
+      best.weight_kg,
+      goal.target_weight_kg,
+    ),
+  }
+}
+
+export function getGoalProgressFromWeights(
+  startWeightKg: number,
+  latestWeightKg: number,
+  targetWeightKg: number,
+) {
+  const total = Math.abs(startWeightKg - targetWeightKg)
+  if (total === 0) return 100
+  const remaining = Math.abs(latestWeightKg - targetWeightKg)
   return Math.max(0, Math.min(100, round(((total - remaining) / total) * 100, 0)))
 }
 
