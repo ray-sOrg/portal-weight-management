@@ -8,6 +8,10 @@ type ApiResponse<T> = {
   total?: number
 }
 
+type RequestOptions = {
+  skipAuthRefresh?: boolean
+}
+
 type ServerUser = {
   uuid: string
   username: string
@@ -258,10 +262,35 @@ function parseServerTrackedPersonId(trackedPersonId: string) {
     : undefined
 }
 
-async function request<T>(path: string, init: RequestInit = {}) {
+async function request<T>(path: string, init: RequestInit = {}, options: RequestOptions = {}) {
+  const payload = await sendRequest<T>(path, init)
+  if (payload.code === 5001 && !options.skipAuthRefresh) {
+    await refreshAccessToken()
+    const retryPayload = await sendRequest<T>(path, init)
+    if (retryPayload.code !== 200) {
+      throw new Error(normalizeApiMessage(retryPayload.message))
+    }
+    return retryPayload.data
+  }
+
+  if (payload.code !== 200) {
+    throw new Error(normalizeApiMessage(payload.message))
+  }
+  return payload.data
+}
+
+async function refreshAccessToken() {
+  await request<Record<string, never>>(
+    '/api/auth/token/refresh',
+    { method: 'POST' },
+    { skipAuthRefresh: true },
+  )
+}
+
+async function sendRequest<T>(path: string, init: RequestInit = {}) {
   const controller = new AbortController()
   const timeoutId = window.setTimeout(() => controller.abort(), 8_000)
-  const csrfToken = shouldSendCsrf(path, init.method) ? getCookie('csrf_access_token') : ''
+  const csrfToken = getCsrfToken(path, init.method)
 
   let response: Response
   try {
@@ -288,18 +317,15 @@ async function request<T>(path: string, init: RequestInit = {}) {
     throw new Error(`服务暂时不可用（${response.status}）`)
   }
 
-  const payload = (await response.json()) as ApiResponse<T>
-  if (payload.code !== 200) {
-    throw new Error(normalizeApiMessage(payload.message))
-  }
-  return payload.data
+  return (await response.json()) as ApiResponse<T>
 }
 
-function shouldSendCsrf(path: string, method = 'GET') {
+function getCsrfToken(path: string, method = 'GET') {
   const normalizedMethod = method.toUpperCase()
-  if (normalizedMethod === 'GET' || normalizedMethod === 'HEAD') return false
-  if (path.startsWith('/api/auth/')) return false
-  return true
+  if (normalizedMethod === 'GET' || normalizedMethod === 'HEAD') return ''
+  if (path === '/api/auth/token/refresh') return getCookie('csrf_refresh_token')
+  if (path.startsWith('/api/auth/')) return ''
+  return getCookie('csrf_access_token')
 }
 
 function normalizeApiMessage(message?: string) {
