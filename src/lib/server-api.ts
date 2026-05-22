@@ -261,7 +261,7 @@ function parseServerTrackedPersonId(trackedPersonId: string) {
 async function request<T>(path: string, init: RequestInit = {}) {
   const controller = new AbortController()
   const timeoutId = window.setTimeout(() => controller.abort(), 8_000)
-  const csrfToken = getCookie('csrf_access_token')
+  const csrfToken = shouldSendCsrf(path, init.method) ? getCookie('csrf_access_token') : ''
 
   let response: Response
   try {
@@ -290,9 +290,27 @@ async function request<T>(path: string, init: RequestInit = {}) {
 
   const payload = (await response.json()) as ApiResponse<T>
   if (payload.code !== 200) {
-    throw new Error(payload.message || 'API 请求失败')
+    throw new Error(normalizeApiMessage(payload.message))
   }
   return payload.data
+}
+
+function shouldSendCsrf(path: string, method = 'GET') {
+  const normalizedMethod = method.toUpperCase()
+  if (normalizedMethod === 'GET' || normalizedMethod === 'HEAD') return false
+  if (path.startsWith('/api/auth/')) return false
+  return true
+}
+
+function normalizeApiMessage(message?: string) {
+  if (!message) return 'API 请求失败'
+  if (message.toLowerCase().includes('csrf')) {
+    return '登录状态校验失败，请退出后重新登录'
+  }
+  if (message.toLowerCase().includes('header')) {
+    return '登录请求头校验失败，请重新登录'
+  }
+  return message
 }
 
 function getCookie(name: string) {

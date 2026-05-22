@@ -756,6 +756,7 @@ function SettingsPage() {
     setIsSigningIn(true)
     setAuthMessage('')
     try {
+      queryClient.removeQueries({ queryKey: ['app-data'] })
       await loginWithPassword(username, password)
       setAuthMessage('登录成功。')
       setProfileMessage('')
@@ -764,7 +765,7 @@ function SettingsPage() {
       setBirthDate('')
       setUsername('')
       setPassword('')
-      await queryClient.invalidateQueries({ queryKey: ['app-data'] })
+      await queryClient.refetchQueries({ queryKey: ['app-data'] })
     } catch (error) {
       setAuthMessage(error instanceof Error ? error.message : '登录失败')
     } finally {
@@ -776,12 +777,12 @@ function SettingsPage() {
     setIsSigningOut(true)
     try {
       await logout().catch(() => undefined)
+      queryClient.removeQueries({ queryKey: ['app-data'] })
       setAuthMessage('已退出登录。')
       setProfileMessage('')
       setDisplayName('')
       setHeightCm('')
       setBirthDate('')
-      await queryClient.invalidateQueries({ queryKey: ['app-data'] })
     } finally {
       setIsSigningOut(false)
     }
