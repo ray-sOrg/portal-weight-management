@@ -22,6 +22,7 @@ export default defineConfig({
       '/api': {
         target: process.env.VITE_API_BASE_URL || 'https://api.tt829.cn',
         changeOrigin: true,
+        cookieDomainRewrite: '',
       },
     },
   },
