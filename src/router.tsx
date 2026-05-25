@@ -1164,8 +1164,20 @@ function BmiBand({
 
 function ScreenLoading() {
   return (
-    <Panel>
-      <div className="h-80 animate-pulse rounded-lg bg-mist" />
+    <Panel className="mx-auto max-w-xl">
+      <div className="flex min-h-72 flex-col items-center justify-center px-6 py-8 text-center">
+        <div className="flex size-12 items-center justify-center rounded-full bg-mint text-sage-dark">
+          <LoaderCircle className="animate-spin" size={22} />
+        </div>
+        <p className="mt-5 font-display text-2xl font-semibold text-ink">正在同步数据</p>
+        <p className="mt-2 max-w-xs text-sm leading-6 text-sage">
+          正在读取账号、成员和体重记录，网络慢时请稍等一下。
+        </p>
+        <div className="mt-6 grid w-full max-w-xs gap-2">
+          <div className="h-2 animate-pulse rounded-full bg-mist" />
+          <div className="mx-auto h-2 w-2/3 animate-pulse rounded-full bg-mist" />
+        </div>
+      </div>
     </Panel>
   )
 }

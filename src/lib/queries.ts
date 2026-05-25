@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   addServerWeightEntry,
@@ -13,6 +13,7 @@ export function useAppData() {
   return useQuery({
     queryKey: ['app-data'],
     queryFn: loadAppData,
+    placeholderData: keepPreviousData,
   })
 }
 
