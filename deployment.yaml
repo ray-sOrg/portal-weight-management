@@ -19,11 +19,10 @@ spec:
       labels:
         app: portal-weight-management
     spec:
-      imagePullSecrets:
-        - name: tencent-tcr-secret
       containers:
         - name: portal-weight-management
           image: __IMAGE_NAME__:__IMAGE_TAG__
+          imagePullPolicy: Never
           envFrom:
             - secretRef:
                 name: portal-weight-management-env

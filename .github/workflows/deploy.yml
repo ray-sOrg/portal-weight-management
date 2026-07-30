@@ -10,21 +10,17 @@ concurrency:
 
 env:
   PROJECT_NAME: portal-weight-management
-  TCR_REGISTRY: ccr.ccs.tencentyun.com
-  TCR_NAMESPACE: ray321
   K8S_DEPLOYMENT_FILE: deployment.yaml
   ROLLOUT_TIMEOUT: 180
   HEALTH_CHECK_HOST: weight.tt829.cn
   HEALTH_CHECK_PATH: /
 
 jobs:
-  build:
-    name: Build & Push Docker Image
+  deploy:
+    name: Build & Deploy to Kubernetes
     runs-on: ubuntu-latest
-
-    outputs:
-      image: ${{ steps.meta.outputs.image }}
-      tag: ${{ steps.meta.outputs.tag }}
+    environment: production
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
@@ -35,44 +31,31 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Login to Tencent TCR
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.TCR_REGISTRY }}
-          username: ${{ secrets.TCR_USERNAME }}
-          password: ${{ secrets.TCR_PASSWORD }}
-
       - name: Generate image metadata
         id: meta
         run: |
-          IMAGE_NAME="${{ env.TCR_REGISTRY }}/${{ env.TCR_NAMESPACE }}/${{ env.PROJECT_NAME }}"
+          IMAGE_NAME="localhost/${{ env.PROJECT_NAME }}"
           IMAGE_TAG="build-${GITHUB_RUN_NUMBER}-$(git rev-parse --short HEAD)"
           echo "image=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
           echo "tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
           echo "Image: $IMAGE_NAME:$IMAGE_TAG"
 
-      - name: Build & Push Docker Image
+      - name: Build Docker image archive
         uses: docker/build-push-action@v7
         with:
           context: .
           tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
-          outputs: type=image,push=true,oci-mediatypes=false
-          provenance: false
-          sbom: false
+          outputs: type=docker,dest=${{ runner.temp }}/deployment-image.tar
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
           platforms: linux/amd64
 
-  deploy:
-    name: Deploy to Kubernetes
-    runs-on: ubuntu-latest
-    needs: build
-    environment: production
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
+      - name: Compress and checksum image
+        id: archive
+        run: |
+          gzip -1 "$RUNNER_TEMP/deployment-image.tar"
+          sha256sum "$RUNNER_TEMP/deployment-image.tar.gz" > "$RUNNER_TEMP/deployment-image.tar.gz.sha256"
+          echo "size=$(du -h "$RUNNER_TEMP/deployment-image.tar.gz" | cut -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Configure SSH
         env:
@@ -86,20 +69,49 @@ jobs:
 
       - name: Prepare deployment manifest
         run: |
-          IMAGE="${{ needs.build.outputs.image }}"
-          TAG="${{ needs.build.outputs.tag }}"
+          IMAGE="${{ steps.meta.outputs.image }}"
+          TAG="${{ steps.meta.outputs.tag }}"
           sed -i "s|__IMAGE_NAME__|$IMAGE|g" "${{ env.K8S_DEPLOYMENT_FILE }}"
           sed -i "s|__IMAGE_TAG__|$TAG|g" "${{ env.K8S_DEPLOYMENT_FILE }}"
           echo "Deploying: $IMAGE:$TAG"
 
-      - name: Upload deployment manifest
+      - name: Upload image and manifest
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          scp -o BatchMode=yes \
-            "${{ env.K8S_DEPLOYMENT_FILE }}" \
-            "${DEPLOY_USER}@${DEPLOY_HOST}:${{ env.PROJECT_NAME }}-deployment.yaml"
+          SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=4"
+          for attempt in 1 2 3; do
+            if rsync \
+              --archive \
+              --partial \
+              --inplace \
+              --timeout=120 \
+              -e "$SSH_COMMAND" \
+              "$RUNNER_TEMP/deployment-image.tar.gz" \
+              "${{ env.K8S_DEPLOYMENT_FILE }}" \
+              "${DEPLOY_USER}@${DEPLOY_HOST}:"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Image upload failed after three attempts"
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
+
+          LOCAL_SHA="$(cut -d' ' -f1 "$RUNNER_TEMP/deployment-image.tar.gz.sha256")"
+          REMOTE_SHA="$(ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            'sha256sum "$HOME/deployment-image.tar.gz"' | cut -d' ' -f1)"
+          test "$LOCAL_SHA" = "$REMOTE_SHA"
+
+      - name: Import image into k3s
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            'sudo -n /usr/local/sbin/k3s-import-deployment-image'
 
       - name: Apply deployment
         env:
@@ -107,7 +119,7 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
           ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            'export KUBECONFIG="$HOME/.kube/config"; kubectl apply -f "$HOME/portal-weight-management-deployment.yaml"; status=$?; rm -f "$HOME/portal-weight-management-deployment.yaml"; exit $status'
+            'export KUBECONFIG="$HOME/.kube/config"; kubectl apply -f "$HOME/deployment.yaml"; status=$?; rm -f "$HOME/deployment.yaml"; exit $status'
 
       - name: Verify deployment and service route
         env:
@@ -131,6 +143,8 @@ jobs:
           {
             echo "### Deployment: ${{ job.status }}"
             echo ""
-            echo "- Image: \`${{ needs.build.outputs.image }}:${{ needs.build.outputs.tag }}\`"
+            echo "- Image: \`${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}\`"
+            echo "- Archive: \`${{ steps.archive.outputs.size }}\`"
             echo "- Host: \`${{ env.HEALTH_CHECK_HOST }}\`"
+            echo "- Registry: bypassed (SSH direct upload)"
           } >> "$GITHUB_STEP_SUMMARY"
