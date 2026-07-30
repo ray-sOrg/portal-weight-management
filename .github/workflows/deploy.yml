@@ -1,23 +1,25 @@
-name: 🚀 Build & Deploy to Production
+name: Build & Deploy
 
 on:
   push:
     branches: [main]
 
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
 env:
   PROJECT_NAME: portal-weight-management
-  GITHUB_REPO: ray-sOrg/portal-weight-management
   TCR_REGISTRY: ccr.ccs.tencentyun.com
   TCR_NAMESPACE: ray321
-  K8S_NAMESPACE: default
   K8S_DEPLOYMENT_FILE: deployment.yaml
-  HEALTH_CHECK_PATH: /
-  CONTAINER_PORT: 80
   ROLLOUT_TIMEOUT: 180
+  HEALTH_CHECK_HOST: weight.tt829.cn
+  HEALTH_CHECK_PATH: /
 
 jobs:
   build:
-    name: 🛠️ Build & Push Docker Image
+    name: Build & Push Docker Image
     runs-on: ubuntu-latest
 
     outputs:
@@ -26,16 +28,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
-          repository: ${{ env.GITHUB_REPO }}
           fetch-depth: 0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
-      - name: Login to Tencent Cloud Container Registry
-        uses: docker/login-action@v3
+      - name: Login to Tencent TCR
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.TCR_REGISTRY }}
           username: ${{ secrets.TCR_USERNAME }}
@@ -44,116 +45,92 @@ jobs:
       - name: Generate image metadata
         id: meta
         run: |
-          IMAGE_NAME=${{ env.TCR_REGISTRY }}/${{ env.TCR_NAMESPACE }}/${{ env.PROJECT_NAME }}
+          IMAGE_NAME="${{ env.TCR_REGISTRY }}/${{ env.TCR_NAMESPACE }}/${{ env.PROJECT_NAME }}"
           IMAGE_TAG="build-${GITHUB_RUN_NUMBER}-$(git rev-parse --short HEAD)"
-
-          echo "image=$IMAGE_NAME" >> $GITHUB_OUTPUT
-          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-          echo "🏷️  镜像标签: $IMAGE_TAG"
-          echo "📤 推送地址: $IMAGE_NAME:$IMAGE_TAG"
+          echo "image=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "Image: $IMAGE_NAME:$IMAGE_TAG"
 
       - name: Build & Push Docker Image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
-          push: true
           tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+          outputs: type=image,push=true,oci-mediatypes=false
+          provenance: false
+          sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
   deploy:
-    name: 🚀 Deploy to Kubernetes
+    name: Deploy to Kubernetes
     runs-on: ubuntu-latest
     needs: build
     environment: production
+    timeout-minutes: 10
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.GITHUB_REPO }}
-          fetch-depth: 0
+        uses: actions/checkout@v6
 
-      - name: Install kubectl
-        run: |
-          if ! command -v kubectl &> /dev/null; then
-            echo "kubectl not found, installing..."
-            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-            chmod +x kubectl
-            sudo mv kubectl /usr/local/bin/
-          else
-            echo "kubectl is already installed"
-          fi
-
-      - name: Configure cluster access
+      - name: Configure SSH
         env:
-          KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
-          mkdir -p $HOME/.kube
-          echo "$KUBECONFIG_CONTENT" > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
-          echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
 
-          echo "📍 集群 API 地址："
-          kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'
-          echo ""
-
-          echo "🔍 验证集群连接..."
-          kubectl cluster-info --request-timeout=10s
-          echo "✅ K8s 集群连接成功"
-
-      - name: Create app runtime config secret
+      - name: Prepare deployment manifest
         run: |
-          kubectl create secret generic portal-weight-management-env \
-            --from-literal=VITE_API_BASE_URL="${{ vars.VITE_API_BASE_URL || 'https://api.tt829.cn' }}" \
-            --namespace=${{ env.K8S_NAMESPACE }} \
-            --dry-run=client -o yaml | kubectl apply -f -
+          IMAGE="${{ needs.build.outputs.image }}"
+          TAG="${{ needs.build.outputs.tag }}"
+          sed -i "s|__IMAGE_NAME__|$IMAGE|g" "${{ env.K8S_DEPLOYMENT_FILE }}"
+          sed -i "s|__IMAGE_TAG__|$TAG|g" "${{ env.K8S_DEPLOYMENT_FILE }}"
+          echo "Deploying: $IMAGE:$TAG"
 
-          echo "✅ 应用运行时配置 Secret 已更新"
-
-      - name: Create Tencent TCR Pull Secret
+      - name: Upload deployment manifest
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          kubectl delete secret tencent-tcr-secret -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true
-
-          kubectl create secret docker-registry tencent-tcr-secret \
-            --docker-server=${{ env.TCR_REGISTRY }} \
-            --docker-username="${{ secrets.TCR_USERNAME }}" \
-            --docker-password="${{ secrets.TCR_PASSWORD }}" \
-            --namespace=${{ env.K8S_NAMESPACE }}
-
-          echo "✅ 腾讯云 TCR 镜像拉取凭证已创建"
+          scp -o BatchMode=yes \
+            "${{ env.K8S_DEPLOYMENT_FILE }}" \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:${{ env.PROJECT_NAME }}-deployment.yaml"
 
       - name: Apply deployment
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          IMAGE=${{ needs.build.outputs.image }}
-          TAG=${{ needs.build.outputs.tag }}
+          ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            'export KUBECONFIG="$HOME/.kube/config"; kubectl apply -f "$HOME/portal-weight-management-deployment.yaml"; status=$?; rm -f "$HOME/portal-weight-management-deployment.yaml"; exit $status'
 
-          sed -i "s|__IMAGE_NAME__|$IMAGE|g" ${{ env.K8S_DEPLOYMENT_FILE }}
-          sed -i "s|__IMAGE_TAG__|$TAG|g" ${{ env.K8S_DEPLOYMENT_FILE }}
-
-          echo "🚀 部署版本: $IMAGE:$TAG"
-          kubectl apply -f ${{ env.K8S_DEPLOYMENT_FILE }}
-
-      - name: Verify rollout & rollback if failed
+      - name: Verify deployment and service route
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          DEPLOY_NAME=${{ env.PROJECT_NAME }}-deployment
-          set -e
-          if kubectl rollout status deployment/$DEPLOY_NAME --timeout=${{ env.ROLLOUT_TIMEOUT }}s; then
-            echo "✅ 部署成功"
+          DEPLOYMENT="${{ env.PROJECT_NAME }}-deployment"
+          if ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "export KUBECONFIG=\"\$HOME/.kube/config\"; kubectl rollout status deployment/$DEPLOYMENT --timeout=${{ env.ROLLOUT_TIMEOUT }}s && curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 15 -H 'Host: ${{ env.HEALTH_CHECK_HOST }}' 'http://127.0.0.1${{ env.HEALTH_CHECK_PATH }}' >/dev/null"; then
+            echo "Deployment and route check succeeded"
           else
-            echo "❌ 部署失败，开始回滚..."
-            kubectl rollout undo deployment/$DEPLOY_NAME
-            echo "🩹 已回滚到上一个稳定版本"
+            echo "Deployment check failed; rolling back"
+            ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              "export KUBECONFIG=\"\$HOME/.kube/config\"; kubectl rollout undo deployment/$DEPLOYMENT && kubectl rollout status deployment/$DEPLOYMENT --timeout=${{ env.ROLLOUT_TIMEOUT }}s"
             exit 1
           fi
 
-      - name: Notify Deployment Result
+      - name: Deployment summary
         if: always()
         run: |
-          STATUS=${{ job.status }}
-          IMAGE=${{ needs.build.outputs.image }}
-          TAG=${{ needs.build.outputs.tag }}
-          echo "📢 部署状态: $STATUS"
-          echo "📦 镜像: $IMAGE:$TAG"
+          {
+            echo "### Deployment: ${{ job.status }}"
+            echo ""
+            echo "- Image: \`${{ needs.build.outputs.image }}:${{ needs.build.outputs.tag }}\`"
+            echo "- Host: \`${{ env.HEALTH_CHECK_HOST }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
