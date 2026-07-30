@@ -8,6 +8,10 @@ concurrency:
   group: production-deploy
   cancel-in-progress: false
 
+permissions:
+  actions: read
+  contents: read
+
 env:
   PROJECT_NAME: portal-weight-management
   K8S_DEPLOYMENT_FILE: deployment.yaml
@@ -54,8 +58,22 @@ jobs:
         id: archive
         run: |
           gzip -1 "$RUNNER_TEMP/deployment-image.tar"
-          sha256sum "$RUNNER_TEMP/deployment-image.tar.gz" > "$RUNNER_TEMP/deployment-image.tar.gz.sha256"
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum deployment-image.tar.gz > deployment-image.tar.gz.sha256
+          )
           echo "size=$(du -h "$RUNNER_TEMP/deployment-image.tar.gz" | cut -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload deployment image artifact
+        id: artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: deployment-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/deployment-image.tar.gz
+            ${{ runner.temp }}/deployment-image.tar.gz.sha256
+          compression-level: 0
+          retention-days: 1
 
       - name: Configure SSH
         env:
@@ -75,35 +93,36 @@ jobs:
           sed -i "s|__IMAGE_TAG__|$TAG|g" "${{ env.K8S_DEPLOYMENT_FILE }}"
           echo "Deploying: $IMAGE:$TAG"
 
-      - name: Upload image and manifest
+      - name: Upload deployment manifest
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=4"
-          for attempt in 1 2 3; do
-            if rsync \
-              --archive \
-              --partial \
-              --inplace \
-              --timeout=120 \
-              -e "$SSH_COMMAND" \
-              "$RUNNER_TEMP/deployment-image.tar.gz" \
-              "${{ env.K8S_DEPLOYMENT_FILE }}" \
-              "${DEPLOY_USER}@${DEPLOY_HOST}:"; then
-              break
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              echo "Image upload failed after three attempts"
-              exit 1
-            fi
-            sleep $((attempt * 10))
-          done
+          scp -o BatchMode=yes -o ConnectTimeout=15 \
+            "${{ env.K8S_DEPLOYMENT_FILE }}" \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:deployment.yaml"
 
-          LOCAL_SHA="$(cut -d' ' -f1 "$RUNNER_TEMP/deployment-image.tar.gz.sha256")"
-          REMOTE_SHA="$(ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            'sha256sum "$HOME/deployment-image.tar.gz"' | cut -d' ' -f1)"
-          test "$LOCAL_SHA" = "$REMOTE_SHA"
+      - name: Download image artifact on server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s\n' "$GH_TOKEN" | ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "set -eu
+            read -r token
+            curl --fail --location --silent --show-error \
+              --retry 5 --retry-all-errors --connect-timeout 15 --max-time 900 \
+              -H 'Accept: application/vnd.github+json' \
+              -H \"Authorization: Bearer \$token\" \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              'https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${{ steps.artifact.outputs.artifact-id }}/zip' \
+              --output \"\$HOME/deployment-image-artifact.zip\"
+            unzip -o -j \"\$HOME/deployment-image-artifact.zip\" -d \"\$HOME\"
+            chmod 600 \"\$HOME/deployment-image.tar.gz\" \"\$HOME/deployment-image.tar.gz.sha256\"
+            cd \"\$HOME\"
+            sha256sum -c deployment-image.tar.gz.sha256
+            rm -f deployment-image-artifact.zip deployment-image.tar.gz.sha256"
 
       - name: Import image into k3s
         env:
