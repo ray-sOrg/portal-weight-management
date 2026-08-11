@@ -297,5 +297,5 @@ export type FitnessExerciseInput = Omit<
 
 export type FitnessPlanInput = Omit<
   FitnessPlan,
-  'createdAt' | 'updatedAt'
->
+  'id' | 'createdAt' | 'updatedAt'
+> & { id?: number }

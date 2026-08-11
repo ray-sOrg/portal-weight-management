@@ -220,7 +220,8 @@ export function FitnessTodayPage() {
   const restTimer = useRestTimer()
   if (isLoading) return <FitnessLoading />
   if (error) return <FitnessError message={error.message} />
-  if (!data || !activePlan) return <FitnessError message="当前账号还没有训练计划。" />
+  if (!data) return <FitnessError message="训练数据读取失败。" />
+  if (!activePlan) return <FitnessNoPlanPrompt />
 
   const todayDay = activePlan.days.find((day) => day.weekday === data.todayWeekday)
   const session = data.todaySession
@@ -537,8 +538,71 @@ export function FitnessPlanPage() {
   const { data, activePlan, isLoading, error } = useActiveFitnessPlan()
   if (isLoading) return <FitnessLoading />
   if (error) return <FitnessError message={error.message} />
-  if (!data || !activePlan) return <FitnessError message="当前账号还没有训练计划。" />
+  if (!data) return <FitnessError message="训练数据读取失败。" />
+  if (!activePlan) return <FitnessPlanEmptyState />
   return <FitnessPlanWorkspace data={data} activePlan={activePlan} />
+}
+
+function FitnessNoPlanPrompt() {
+  return (
+    <FitnessShell
+      eyebrow="Training plan"
+      title="还没有训练计划"
+      body="创建计划后，今日页面会按照星期自动展示训练动作。"
+    >
+      <Panel>
+        <EmptyState title="今天还没有安排" body="前往计划页创建一份空白计划，再按自己的节奏配置训练日和动作。" />
+        <Link to="/fitness/plan" className="mt-4 flex h-11 items-center justify-center gap-2 rounded-md bg-sage-dark px-4 text-sm font-medium text-white">
+          <Plus size={16} />
+          创建训练计划
+        </Link>
+      </Panel>
+    </FitnessShell>
+  )
+}
+
+function FitnessPlanEmptyState() {
+  const savePlan = useSaveFitnessPlan()
+
+  const createPlan = () => {
+    savePlan.mutate({
+      trackedPersonId: null,
+      name: '我的训练计划',
+      description: null,
+      durationWeeks: 12,
+      startDate: null,
+      isActive: true,
+      days: WEEKDAYS.map((weekday, index) => ({
+        weekday: index + 1,
+        name: weekday,
+        focus: null,
+        isRest: true,
+        estimatedMinutes: null,
+        notes: null,
+        exercises: [],
+      })),
+    })
+  }
+
+  return (
+    <FitnessShell
+      eyebrow="Plan builder"
+      title="从一份空白计划开始"
+      body="计划已经清空。新计划不会自动加入动作，创建后由你决定每周怎么练。"
+    >
+      <Panel>
+        <div className="flex min-h-64 flex-col items-center justify-center px-4 text-center">
+          <div className="flex size-12 items-center justify-center rounded-full bg-mint text-sage-dark"><CalendarDays size={22} /></div>
+          <h2 className="mt-5 font-display text-2xl font-semibold text-ink">暂无训练计划</h2>
+          <p className="mt-2 max-w-sm text-sm leading-6 text-sage">创建后会生成周一到周日七个空白日期，你可以把任意一天设为训练日并添加动作。</p>
+          <Button type="button" className="mt-6" onClick={createPlan} disabled={savePlan.isPending}>
+            {savePlan.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Plus size={16} />}
+            {savePlan.isPending ? '创建中' : '创建空白计划'}
+          </Button>
+        </div>
+      </Panel>
+    </FitnessShell>
+  )
 }
 
 function FitnessPlanWorkspace({ data, activePlan }: { data: FitnessBootstrap; activePlan: FitnessPlan }) {
@@ -659,7 +723,7 @@ function FitnessPlanEditor({
           </Field>
           <div className="flex flex-col gap-2 sm:flex-row lg:ml-auto">
             <Button type="button" variant="secondary" onClick={() => copyPlan.mutate({ id: draft.id, name: `${draft.name} · 副本` }, { onSuccess: (plan) => onSelectPlan(plan.id) })} disabled={copyPlan.isPending}>{copyPlan.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Copy size={16} />}{copyPlan.isPending ? '复制中' : '复制整份计划'}</Button>
-            <Button type="button" variant="secondary" className="border-coral/30 text-coral hover:border-coral hover:bg-coral/5" onClick={() => setShowDeleteConfirm(true)} disabled={data.plans.length <= 1 || deletePlan.isPending} title={data.plans.length <= 1 ? '至少需要保留一份训练计划' : '删除这份训练计划'}><Trash2 size={16} />删除计划</Button>
+            <Button type="button" variant="secondary" className="border-coral/30 text-coral hover:border-coral hover:bg-coral/5" onClick={() => setShowDeleteConfirm(true)} disabled={deletePlan.isPending}><Trash2 size={16} />删除计划</Button>
             {!draft.isActive ? <Button type="button" onClick={() => activatePlan.mutate(draft.id)} disabled={activatePlan.isPending}>设为当前计划</Button> : <span className="inline-flex h-10 items-center justify-center rounded-md bg-mint px-4 text-sm font-semibold text-sage-dark">当前执行中</span>}
           </div>
         </div>
@@ -774,10 +838,11 @@ function FitnessPlanEditor({
             <div className="flex size-11 items-center justify-center rounded-full bg-coral/10 text-coral"><Trash2 size={20} /></div>
             <h2 id="delete-plan-title" className="mt-4 font-display text-2xl font-semibold text-ink">删除“{draft.name}”？</h2>
             <p className="mt-2 text-sm leading-6 text-sage">计划里的星期安排会被删除，但已经完成的训练记录和个人纪录不会受影响。此操作无法撤销。</p>
-            {draft.isActive ? <p className="mt-3 rounded-lg bg-mist px-3 py-2 text-xs leading-5 text-sage-dark">这是当前执行计划，删除后会自动切换到另一份计划。</p> : null}
+            {data.plans.length === 1 ? <p className="mt-3 rounded-lg bg-mist px-3 py-2 text-xs leading-5 text-sage-dark">这是最后一份计划。删除后会进入空状态，你可以随时重新创建。</p> : null}
+            {draft.isActive && data.plans.length > 1 ? <p className="mt-3 rounded-lg bg-mist px-3 py-2 text-xs leading-5 text-sage-dark">这是当前执行计划，删除后会自动切换到另一份计划。</p> : null}
             <div className="mt-5 grid grid-cols-2 gap-3">
               <Button type="button" variant="secondary" onClick={() => setShowDeleteConfirm(false)} disabled={deletePlan.isPending}>取消</Button>
-              <Button type="button" className="bg-coral hover:bg-[#d85c49]" disabled={deletePlan.isPending} onClick={() => deletePlan.mutate(draft.id, { onSuccess: (result) => { setShowDeleteConfirm(false); onSelectPlan(result.activePlanId) } })}>{deletePlan.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Trash2 size={16} />}{deletePlan.isPending ? '删除中' : '确认删除'}</Button>
+              <Button type="button" className="bg-coral hover:bg-[#d85c49]" disabled={deletePlan.isPending} onClick={() => deletePlan.mutate(draft.id, { onSuccess: (result) => { setShowDeleteConfirm(false); if (result.activePlanId) onSelectPlan(result.activePlanId) } })}>{deletePlan.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Trash2 size={16} />}{deletePlan.isPending ? '删除中' : '确认删除'}</Button>
             </div>
           </section>
         </div>

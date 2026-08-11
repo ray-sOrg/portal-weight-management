@@ -248,7 +248,7 @@ export async function copyServerFitnessPlan(id: number, name?: string) {
 export async function deleteServerFitnessPlan(id: number) {
   return request<{
     id: number
-    activePlanId: number
+    activePlanId: number | null
     preservedSessionCount: number
   }>('/api/fitness/plan/delete', {
     method: 'POST',
