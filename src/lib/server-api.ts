@@ -1,5 +1,24 @@
 import { calculateBmi } from './metrics'
-import type { AppData, NewTrackedPerson, NewWeightEntry, NewWeightGoal, TrackedPerson, WeightEntry, WeightGoal } from './types'
+import type {
+  AppData,
+  FitnessBootstrap,
+  FitnessExercise,
+  FitnessExerciseInput,
+  FitnessFeedbackInput,
+  FitnessExportData,
+  FitnessPlan,
+  FitnessPlanInput,
+  FitnessRecord,
+  FitnessSession,
+  FitnessSessionSummary,
+  FitnessSetInput,
+  NewTrackedPerson,
+  NewWeightEntry,
+  NewWeightGoal,
+  TrackedPerson,
+  WeightEntry,
+  WeightGoal,
+} from './types'
 
 type ApiResponse<T> = {
   code: number
@@ -169,6 +188,99 @@ export async function addServerWeightEntry(input: NewWeightEntry) {
     }),
   })
   return record
+}
+
+export async function loadFitnessBootstrap() {
+  return request<FitnessBootstrap>('/api/fitness/bootstrap')
+}
+
+export async function saveServerFitnessExercise(input: FitnessExerciseInput) {
+  return request<FitnessExercise>('/api/fitness/exercise/save', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function archiveServerFitnessExercise(id: number) {
+  return request<FitnessExercise>('/api/fitness/exercise/archive', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  })
+}
+
+export async function saveServerFitnessPlan(input: FitnessPlanInput) {
+  return request<FitnessPlan>('/api/fitness/plan/save', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function activateServerFitnessPlan(id: number) {
+  return request<FitnessPlan>('/api/fitness/plan/activate', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  })
+}
+
+export async function copyServerFitnessPlan(id: number, name?: string) {
+  return request<FitnessPlan>('/api/fitness/plan/copy', {
+    method: 'POST',
+    body: JSON.stringify({ id, name }),
+  })
+}
+
+export async function startServerFitnessSession(input?: {
+  scheduledDate?: string
+  trackedPersonId?: number
+}) {
+  return request<FitnessSession>('/api/fitness/session/start', {
+    method: 'POST',
+    body: JSON.stringify(input ?? {}),
+  })
+}
+
+export async function saveServerFitnessSet(input: FitnessSetInput) {
+  return request<FitnessSession>('/api/fitness/session/set/save', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function finishServerFitnessSession(input: FitnessFeedbackInput) {
+  return request<FitnessSession>('/api/fitness/session/finish', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function saveServerFitnessFeedback(input: FitnessFeedbackInput) {
+  return request<FitnessSession>('/api/fitness/session/feedback/save', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function deleteServerFitnessSession(id: number) {
+  return request<{ id: number }>('/api/fitness/session/delete', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  })
+}
+
+export async function loadFitnessHistory() {
+  return request<FitnessSessionSummary[]>('/api/fitness/history?limit=100')
+}
+
+export async function loadFitnessSession(id: number) {
+  return request<FitnessSession>(`/api/fitness/session/${id}`)
+}
+
+export async function loadFitnessRecords() {
+  return request<FitnessRecord[]>('/api/fitness/records')
+}
+
+export async function loadFitnessExport() {
+  return request<FitnessExportData>('/api/fitness/export')
 }
 
 export async function editServerWeightEntry(input: NewWeightEntry) {

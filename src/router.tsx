@@ -13,6 +13,7 @@ import {
   Activity,
   ChartNoAxesCombined,
   Download,
+  Dumbbell,
   Home,
   LogIn,
   LogOut,
@@ -55,6 +56,13 @@ import {
 } from './lib/server-api'
 import type { TrackedPerson } from './lib/types'
 import { formatFullDate, formatJin, formatKg, jinToKg, kgToJin, todayISO } from './lib/utils'
+import {
+  FitnessExercisesPage,
+  FitnessHistoryPage,
+  FitnessPlanPage,
+  FitnessRecordsPage,
+  FitnessTodayPage,
+} from './fitness/module'
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -90,11 +98,46 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 })
 
+const fitnessRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/fitness',
+  component: FitnessTodayPage,
+})
+
+const fitnessPlanRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/fitness/plan',
+  component: FitnessPlanPage,
+})
+
+const fitnessExercisesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/fitness/exercises',
+  component: FitnessExercisesPage,
+})
+
+const fitnessHistoryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/fitness/history',
+  component: FitnessHistoryPage,
+})
+
+const fitnessRecordsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/fitness/records',
+  component: FitnessRecordsPage,
+})
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   entriesRoute,
   reportsRoute,
   householdRoute,
+  fitnessRoute,
+  fitnessPlanRoute,
+  fitnessExercisesRoute,
+  fitnessHistoryRoute,
+  fitnessRecordsRoute,
   settingsRoute,
 ])
 
@@ -111,6 +154,7 @@ const navItems = [
   { to: '/entries', label: '记录', icon: Plus },
   { to: '/reports', label: '报表', icon: ChartNoAxesCombined },
   { to: '/household', label: '家庭', icon: Users },
+  { to: '/fitness', label: '健身', icon: Dumbbell },
   { to: '/settings', label: '设置', icon: Settings },
 ] as const
 
@@ -148,7 +192,7 @@ function RootLayout() {
       <main className="mx-auto max-w-7xl px-4 pb-28 pt-4 sm:px-6 md:pb-6 md:pt-6 lg:px-8">
         <Outlet />
       </main>
-      <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-line bg-white/96 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-12px_34px_rgba(33,45,40,0.08)] backdrop-blur md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-6 border-t border-line bg-white/96 px-1 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-12px_34px_rgba(33,45,40,0.08)] backdrop-blur md:hidden">
         {navItems.map((item) => (
           <Link
             key={item.to}

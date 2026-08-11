@@ -84,3 +84,218 @@ export type NewTrackedPerson = {
   birthDate?: string | null
   relationship?: string | null
 }
+
+export type FitnessExerciseCategory =
+  | 'strength'
+  | 'skill'
+  | 'cardio'
+  | 'mobility'
+  | 'recovery'
+
+export type FitnessMetricType = 'reps' | 'duration' | 'distance' | 'check'
+
+export type FitnessExercise = {
+  id: number
+  name: string
+  category: FitnessExerciseCategory
+  primaryMuscle: string | null
+  secondaryMuscles: string | null
+  equipment: string | null
+  metricType: FitnessMetricType
+  instructions: string | null
+  cautions: string | null
+  progressionNotes: string | null
+  isActive: boolean
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export type FitnessPlanExercise = {
+  id?: number
+  exerciseId: number
+  sortOrder: number
+  sets: number | null
+  repsMin: number | null
+  repsMax: number | null
+  durationSecondsMin: number | null
+  durationSecondsMax: number | null
+  rirMin: number | null
+  rirMax: number | null
+  targetWeightKg: number | null
+  weightNote: string | null
+  restSeconds: number | null
+  progressionType: string | null
+  planNotes: string | null
+  supersetGroup: string | null
+  eachSide: boolean
+  exercise?: FitnessExercise | null
+}
+
+export type FitnessPlanDay = {
+  id?: number
+  weekday: number
+  name: string
+  focus: string | null
+  isRest: boolean
+  estimatedMinutes: number | null
+  notes: string | null
+  exercises: FitnessPlanExercise[]
+}
+
+export type FitnessPlan = {
+  id: number
+  trackedPersonId: number | null
+  name: string
+  description: string | null
+  durationWeeks: number
+  startDate: string | null
+  isActive: boolean
+  createdAt: string | null
+  updatedAt: string | null
+  days: FitnessPlanDay[]
+}
+
+export type FitnessSessionStatus = 'in_progress' | 'completed' | 'partial' | 'skipped'
+
+export type FitnessSet = {
+  id: number
+  setNumber: number
+  actualReps: number | null
+  actualDurationSeconds: number | null
+  actualWeightKg: number | null
+  rir: number | null
+  completed: boolean
+  completedAt: string | null
+  notes: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export type FitnessSessionExercise = {
+  id: number
+  sourcePlanExerciseId: number | null
+  exerciseId: number | null
+  sortOrder: number
+  exerciseName: string
+  category: FitnessExerciseCategory
+  primaryMuscle: string | null
+  equipment: string | null
+  metricType: FitnessMetricType
+  instructions: string | null
+  cautions: string | null
+  targetSets: number | null
+  repsMin: number | null
+  repsMax: number | null
+  durationSecondsMin: number | null
+  durationSecondsMax: number | null
+  rirMin: number | null
+  rirMax: number | null
+  targetWeightKg: number | null
+  weightNote: string | null
+  restSeconds: number | null
+  progressionType: string | null
+  planNotes: string | null
+  supersetGroup: string | null
+  eachSide: boolean
+  completed: boolean
+  notes: string | null
+  sets: FitnessSet[]
+  previousSets: FitnessSet[]
+}
+
+export type FitnessSession = {
+  id: number
+  trackedPersonId: number | null
+  planId: number | null
+  planDayId: number | null
+  scheduledDate: string
+  weekday: number
+  name: string
+  focus: string | null
+  status: FitnessSessionStatus
+  startedAt: string | null
+  endedAt: string | null
+  notes: string | null
+  readinessScore: number | null
+  effortScore: number | null
+  painFlag: boolean
+  painNotes: string | null
+  createdAt: string | null
+  updatedAt: string | null
+  completedSets: number
+  totalSets: number
+  progressPercent: number
+  totalVolumeKg: number
+  exercises: FitnessSessionExercise[]
+}
+
+export type FitnessSessionSummary = Omit<FitnessSession, 'exercises'> & {
+  exerciseCount: number
+  durationMinutes: number | null
+}
+
+export type FitnessRecord = {
+  exerciseId: number | null
+  exerciseName: string
+  primaryMuscle: string | null
+  maxWeightKg: number | null
+  maxReps: number | null
+  estimatedOneRepMaxKg: number | null
+  maxSetVolumeKg: number | null
+  completedSets: number
+  lastRecordDate: string | null
+  trend: FitnessTrendPoint[]
+}
+
+export type FitnessTrendPoint = {
+  date: string
+  maxWeightKg: number | null
+  maxReps: number | null
+  estimatedOneRepMaxKg: number | null
+  totalVolumeKg: number
+}
+
+export type FitnessSetInput = {
+  id: number
+  actualReps?: number | null
+  actualDurationSeconds?: number | null
+  actualWeightKg?: number | null
+  rir?: number | null
+  completed: boolean
+  notes?: string | null
+}
+
+export type FitnessFeedbackInput = {
+  id: number
+  readinessScore: number | null
+  effortScore: number | null
+  painFlag: boolean
+  painNotes?: string | null
+  notes?: string | null
+}
+
+export type FitnessExportData = {
+  exportedAt: string
+  exercises: FitnessExercise[]
+  plans: FitnessPlan[]
+  sessions: FitnessSession[]
+}
+
+export type FitnessBootstrap = {
+  today: string
+  todayWeekday: number
+  exercises: FitnessExercise[]
+  plans: FitnessPlan[]
+  activePlanId: number | null
+  todaySession: FitnessSession | null
+}
+
+export type FitnessExerciseInput = Omit<
+  FitnessExercise,
+  'id' | 'createdAt' | 'updatedAt'
+> & { id?: number }
+
+export type FitnessPlanInput = Omit<
+  FitnessPlan,
+  'createdAt' | 'updatedAt'
+>

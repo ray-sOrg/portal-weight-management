@@ -58,3 +58,74 @@ button {
 .recharts-wrapper * {
   outline: none;
 }
+
+.fitness-select,
+.fitness-textarea {
+  width: 100%;
+  border: 1px solid var(--color-line);
+  border-radius: 0.375rem;
+  background: white;
+  color: var(--color-ink);
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.fitness-select {
+  height: 2.75rem;
+  padding: 0 0.75rem;
+}
+
+.fitness-textarea {
+  min-height: 5.5rem;
+  resize: vertical;
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+}
+
+.fitness-select:focus,
+.fitness-textarea:focus {
+  border-color: var(--color-sage);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-mint) 55%, transparent);
+}
+
+.fitness-hero::before {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  opacity: 0.18;
+  background-image: repeating-linear-gradient(
+    115deg,
+    transparent 0,
+    transparent 28px,
+    rgba(255, 255, 255, 0.08) 29px,
+    transparent 30px
+  );
+  mask-image: linear-gradient(to left, black, transparent 72%);
+}
+
+.fitness-subnav-active:hover {
+  background-color: #13251f !important;
+  color: #ffffff !important;
+}
+
+.fitness-list-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 180px;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .fitness-select {
+    height: 2.5rem;
+    font-size: 0.875rem;
+  }
+}
