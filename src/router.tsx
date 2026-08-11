@@ -50,6 +50,7 @@ import {
 } from './lib/metrics'
 import { useAddWeightEntry, useAppData, useUpsertGoal, useUpsertPerson } from './lib/queries'
 import {
+  isAuthenticationError,
   loginWithPassword,
   logout,
   updateProfile,
@@ -738,9 +739,10 @@ function HouseholdPage() {
 }
 
 function SettingsPage() {
-  const { data, error } = useAppData()
+  const { data, error, isLoading, refetch } = useAppData()
   const queryClient = useQueryClient()
-  const isSignedIn = Boolean(data && !error)
+  const isSignedIn = Boolean(data)
+  const isSignedOut = !data && isAuthenticationError(error)
   const currentPerson = data?.people[0]
   const currentPersonEntryCount =
     data && currentPerson
@@ -883,6 +885,34 @@ function SettingsPage() {
     })
     setGoalWeightJin(targetWeightKg ? kgToJin(targetWeightKg).toFixed(1) : '')
     setGoalDate(effectiveGoalDate)
+  }
+
+  if (isLoading) {
+    return (
+      <ScreenLoading
+        title="正在确认登录状态"
+        body="正在读取你的账号信息，确认完成前不会显示登录表单。"
+      />
+    )
+  }
+
+  if (!isSignedIn && !isSignedOut) {
+    return (
+      <Panel className="mx-auto max-w-xl">
+        <div className="flex min-h-72 flex-col items-center justify-center px-6 py-8 text-center">
+          <div className="flex size-12 items-center justify-center rounded-full bg-mist text-sage-dark">
+            <UserRoundCheck size={22} />
+          </div>
+          <p className="mt-5 font-display text-2xl font-semibold text-ink">暂时无法确认登录状态</p>
+          <p className="mt-2 max-w-sm text-sm leading-6 text-sage">
+            {error instanceof Error ? error.message : '账号信息读取失败，请稍后重试。'}
+          </p>
+          <Button type="button" className="mt-6" onClick={() => void refetch()}>
+            重新检查
+          </Button>
+        </div>
+      </Panel>
+    )
   }
 
   return (
@@ -1206,17 +1236,21 @@ function BmiBand({
   )
 }
 
-function ScreenLoading() {
+function ScreenLoading({
+  title = '正在同步数据',
+  body = '正在读取账号、成员和体重记录，网络慢时请稍等一下。',
+}: {
+  title?: string
+  body?: string
+} = {}) {
   return (
     <Panel className="mx-auto max-w-xl">
       <div className="flex min-h-72 flex-col items-center justify-center px-6 py-8 text-center">
         <div className="flex size-12 items-center justify-center rounded-full bg-mint text-sage-dark">
           <LoaderCircle className="animate-spin" size={22} />
         </div>
-        <p className="mt-5 font-display text-2xl font-semibold text-ink">正在同步数据</p>
-        <p className="mt-2 max-w-xs text-sm leading-6 text-sage">
-          正在读取账号、成员和体重记录，网络慢时请稍等一下。
-        </p>
+        <p className="mt-5 font-display text-2xl font-semibold text-ink">{title}</p>
+        <p className="mt-2 max-w-xs text-sm leading-6 text-sage">{body}</p>
         <div className="mt-6 grid w-full max-w-xs gap-2">
           <div className="h-2 animate-pulse rounded-full bg-mist" />
           <div className="mx-auto h-2 w-2/3 animate-pulse rounded-full bg-mist" />

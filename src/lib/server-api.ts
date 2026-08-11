@@ -31,6 +31,22 @@ type RequestOptions = {
   skipAuthRefresh?: boolean
 }
 
+const AUTH_ERROR_CODES = new Set([5002, 5003, 5004, 5005])
+
+export class ApiRequestError extends Error {
+  constructor(
+    public readonly code: number,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'ApiRequestError'
+  }
+}
+
+export function isAuthenticationError(error: unknown) {
+  return error instanceof ApiRequestError && AUTH_ERROR_CODES.has(error.code)
+}
+
 type ServerUser = {
   uuid: string
   username: string
@@ -386,7 +402,7 @@ async function request<T>(path: string, init: RequestInit = {}, options: Request
   }
 
   if (payload.code !== 200) {
-    throw new Error(normalizeApiMessage(payload.message))
+    throw new ApiRequestError(payload.code, normalizeApiMessage(payload.message))
   }
   return payload.data
 }
