@@ -152,10 +152,10 @@ declare module '@tanstack/react-router' {
 
 const navItems = [
   { to: '/', label: '仪表盘', icon: Home },
+  { to: '/fitness', label: '健身', icon: Dumbbell },
   { to: '/entries', label: '记录', icon: Plus },
   { to: '/reports', label: '报表', icon: ChartNoAxesCombined },
   { to: '/household', label: '家庭', icon: Users },
-  { to: '/fitness', label: '健身', icon: Dumbbell },
   { to: '/settings', label: '设置', icon: Settings },
 ] as const
 

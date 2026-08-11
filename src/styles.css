@@ -110,6 +110,26 @@ button {
   color: #ffffff !important;
 }
 
+.fitness-tab-progress {
+  animation: fitness-tab-progress 700ms ease-in-out infinite alternate;
+}
+
+@keyframes fitness-tab-progress {
+  from {
+    transform: translateX(-20%);
+  }
+  to {
+    transform: translateX(220%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fitness-tab-progress {
+    animation: none;
+    width: 100%;
+  }
+}
+
 .fitness-list-item {
   content-visibility: auto;
   contain-intrinsic-size: auto 180px;

@@ -245,6 +245,17 @@ export async function copyServerFitnessPlan(id: number, name?: string) {
   })
 }
 
+export async function deleteServerFitnessPlan(id: number) {
+  return request<{
+    id: number
+    activePlanId: number
+    preservedSessionCount: number
+  }>('/api/fitness/plan/delete', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  })
+}
+
 export async function startServerFitnessSession(input?: {
   scheduledDate?: string
   trackedPersonId?: number

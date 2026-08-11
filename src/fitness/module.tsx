@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useRouterState } from '@tanstack/react-router'
 import {
   AlertTriangle,
   ArrowDown,
@@ -30,6 +30,7 @@ import {
   useArchiveFitnessExercise,
   useActivateFitnessPlan,
   useCopyFitnessPlan,
+  useDeleteFitnessPlan,
   useDeleteFitnessSession,
   useFitnessData,
   useFitnessHistory,
@@ -112,6 +113,9 @@ function FitnessShell({
   action?: ReactNode
   children: ReactNode
 }) {
+  const currentPath = useRouterState({ select: (state) => state.location.pathname })
+  const [pendingPath, setPendingPath] = useState<string | null>(null)
+
   return (
     <div className="space-y-4 md:space-y-6">
       <section className="fitness-hero relative overflow-hidden rounded-[1.6rem] bg-[#13251f] px-5 py-6 text-white shadow-[0_28px_80px_rgba(19,37,31,0.2)] sm:px-7 md:py-8">
@@ -131,23 +135,41 @@ function FitnessShell({
         </div>
       </section>
 
-      <nav className="no-scrollbar flex gap-0 overflow-x-auto rounded-xl border border-line bg-white/90 p-1.5 shadow-sm sm:gap-1">
-        {FITNESS_NAV.map((item) => (
-          <Link
-            key={item.to}
-            to={item.to}
-            className="flex h-10 min-w-0 flex-1 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-lg px-1.5 text-[11px] font-medium text-sage-dark transition hover:bg-mist sm:flex-none sm:justify-start sm:gap-2 sm:px-3 sm:text-sm"
-            activeProps={{
-              className:
-                'fitness-subnav-active bg-[#13251f] text-white shadow-sm',
-            }}
-            activeOptions={{ exact: item.to === '/fitness' }}
-          >
-            <item.icon size={16} />
-            {item.label}
-          </Link>
-        ))}
-      </nav>
+      <div className="relative">
+        <nav className="no-scrollbar flex gap-0 overflow-x-auto rounded-xl border border-line bg-white/90 p-1.5 shadow-sm sm:gap-1">
+          {FITNESS_NAV.map((item) => {
+            const isPending = pendingPath === item.to
+            return (
+              <Link
+                key={item.to}
+                to={item.to}
+                aria-busy={isPending}
+                onClick={() => {
+                  if (currentPath !== item.to) setPendingPath(item.to)
+                }}
+                className="flex h-10 min-w-0 flex-1 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-lg px-1.5 text-[11px] font-medium text-sage-dark transition hover:bg-mist sm:flex-none sm:justify-start sm:gap-2 sm:px-3 sm:text-sm"
+                activeProps={{
+                  className:
+                    'fitness-subnav-active bg-[#13251f] text-white shadow-sm',
+                }}
+                activeOptions={{ exact: item.to === '/fitness' }}
+              >
+                {isPending ? <LoaderCircle className="animate-spin" size={16} /> : <item.icon size={16} />}
+                {isPending ? '加载中' : item.label}
+              </Link>
+            )
+          })}
+        </nav>
+        <div
+          className={cn(
+            'pointer-events-none absolute inset-x-3 -bottom-px h-0.5 overflow-hidden rounded-full transition-opacity',
+            pendingPath ? 'opacity-100' : 'opacity-0',
+          )}
+          aria-hidden="true"
+        >
+          <span className="fitness-tab-progress block h-full w-1/3 rounded-full bg-[#d8f96f]" />
+        </div>
+      </div>
       {children}
     </div>
   )
@@ -538,9 +560,11 @@ function FitnessPlanEditor({
 }) {
   const savePlan = useSaveFitnessPlan()
   const copyPlan = useCopyFitnessPlan()
+  const deletePlan = useDeleteFitnessPlan()
   const activatePlan = useActivateFitnessPlan()
   const [draft, setDraft] = useState<FitnessPlan>(() => structuredClone(activePlan))
   const [selectedWeekday, setSelectedWeekday] = useState(1)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const selectedDay = draft.days.find((day) => day.weekday === selectedWeekday)
   const activeExercises = data.exercises.filter((exercise) => exercise.isActive)
@@ -634,11 +658,12 @@ function FitnessPlanEditor({
             </select>
           </Field>
           <div className="flex flex-col gap-2 sm:flex-row lg:ml-auto">
-            <Button type="button" variant="secondary" onClick={() => copyPlan.mutate({ id: draft.id, name: `${draft.name} · 新版本` }, { onSuccess: (plan) => onSelectPlan(plan.id) })} disabled={copyPlan.isPending}><Copy size={16} />复制为新版本</Button>
+            <Button type="button" variant="secondary" onClick={() => copyPlan.mutate({ id: draft.id, name: `${draft.name} · 副本` }, { onSuccess: (plan) => onSelectPlan(plan.id) })} disabled={copyPlan.isPending}>{copyPlan.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Copy size={16} />}{copyPlan.isPending ? '复制中' : '复制整份计划'}</Button>
+            <Button type="button" variant="secondary" className="border-coral/30 text-coral hover:border-coral hover:bg-coral/5" onClick={() => setShowDeleteConfirm(true)} disabled={data.plans.length <= 1 || deletePlan.isPending} title={data.plans.length <= 1 ? '至少需要保留一份训练计划' : '删除这份训练计划'}><Trash2 size={16} />删除计划</Button>
             {!draft.isActive ? <Button type="button" onClick={() => activatePlan.mutate(draft.id)} disabled={activatePlan.isPending}>设为当前计划</Button> : <span className="inline-flex h-10 items-center justify-center rounded-md bg-mint px-4 text-sm font-semibold text-sage-dark">当前执行中</span>}
           </div>
         </div>
-        <p className="mt-3 text-xs leading-5 text-sage">复制后可单独修改新版本，再设为当前计划；旧训练历史不会改变。</p>
+        <p className="mt-3 text-xs leading-5 text-sage">复制会创建一份内容相同、可独立编辑的新计划；删除只移除计划模板，已经完成的训练历史仍会保留。</p>
       </Panel>
       <Panel className="p-3 sm:p-4">
         <div className="grid gap-3 md:grid-cols-[1fr_9rem_9rem]">
@@ -743,6 +768,20 @@ function FitnessPlanEditor({
           </div>
         ) : null}
       </div>
+      {showDeleteConfirm ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#13251f]/45 p-4 backdrop-blur-sm sm:items-center" role="presentation" onMouseDown={() => setShowDeleteConfirm(false)}>
+          <section className="w-full max-w-md rounded-2xl border border-white/60 bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="delete-plan-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="flex size-11 items-center justify-center rounded-full bg-coral/10 text-coral"><Trash2 size={20} /></div>
+            <h2 id="delete-plan-title" className="mt-4 font-display text-2xl font-semibold text-ink">删除“{draft.name}”？</h2>
+            <p className="mt-2 text-sm leading-6 text-sage">计划里的星期安排会被删除，但已经完成的训练记录和个人纪录不会受影响。此操作无法撤销。</p>
+            {draft.isActive ? <p className="mt-3 rounded-lg bg-mist px-3 py-2 text-xs leading-5 text-sage-dark">这是当前执行计划，删除后会自动切换到另一份计划。</p> : null}
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <Button type="button" variant="secondary" onClick={() => setShowDeleteConfirm(false)} disabled={deletePlan.isPending}>取消</Button>
+              <Button type="button" className="bg-coral hover:bg-[#d85c49]" disabled={deletePlan.isPending} onClick={() => deletePlan.mutate(draft.id, { onSuccess: (result) => { setShowDeleteConfirm(false); onSelectPlan(result.activePlanId) } })}>{deletePlan.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Trash2 size={16} />}{deletePlan.isPending ? '删除中' : '确认删除'}</Button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </FitnessShell>
   )
 }

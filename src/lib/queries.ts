@@ -6,6 +6,7 @@ import {
   archiveServerFitnessExercise,
   copyServerFitnessPlan,
   createServerTrackedPerson,
+  deleteServerFitnessPlan,
   deleteServerFitnessSession,
   editServerWeightEntry,
   finishServerFitnessSession,
@@ -139,7 +140,22 @@ export function useCopyFitnessPlan() {
   return useMutation({
     mutationFn: ({ id, name }: { id: number; name?: string }) => copyServerFitnessPlan(id, name),
     onSuccess: () => {
-      toast.success('计划新版本已创建')
+      toast.success('计划副本已创建')
+      void queryClient.invalidateQueries({ queryKey: ['fitness-data'] })
+    },
+    onError: (error) => toast.error(error.message),
+  })
+}
+
+export function useDeleteFitnessPlan() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => deleteServerFitnessPlan(id),
+    onSuccess: (result) => {
+      const historyMessage = result.preservedSessionCount
+        ? `，${result.preservedSessionCount} 次训练历史已保留`
+        : ''
+      toast.success(`计划已删除${historyMessage}`)
       void queryClient.invalidateQueries({ queryKey: ['fitness-data'] })
     },
     onError: (error) => toast.error(error.message),
