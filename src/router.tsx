@@ -8,10 +8,13 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  redirect,
 } from '@tanstack/react-router'
 import {
   Activity,
-  ChartNoAxesCombined,
+  ArrowRight,
+  CalendarCheck,
+  CheckCircle2,
   Download,
   Dumbbell,
   Home,
@@ -27,35 +30,38 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { FormEvent, type ReactNode, useMemo, useState } from 'react'
 import { BmiChart, HouseholdCompareChart, WeightTrendChart } from './components/charts'
-import { Button, EmptyState, Input, Label, Panel, Stat } from './components/ui'
+import { Button, EmptyState, Input, Label, Panel } from './components/ui'
 import { downloadCsv, downloadJson, exportBackupJson, exportEntriesCsv } from './lib/csv'
 import {
   calculateBmi,
   filterEntriesByRange,
-  getBmiLabel,
   getFirstEntry,
-  getBestGoalProgressFromEntries,
   getGoalProgressFromEntries,
-  getInsights,
   getRangeSummary,
   getLatestEntry,
   getBmiDistribution,
   getLongestStreakDays,
   getPhaseComparison,
-  getStreakDays,
   getStabilityLabel,
   getWeightChange,
   sortEntries,
   type TrendRange,
 } from './lib/metrics'
-import { useAddWeightEntry, useAppData, useUpsertGoal, useUpsertPerson } from './lib/queries'
+import {
+  useAddWeightEntry,
+  useAppData,
+  useFitnessData,
+  useFitnessHistory,
+  useUpsertGoal,
+  useUpsertPerson,
+} from './lib/queries'
 import {
   isAuthenticationError,
   loginWithPassword,
   logout,
   updateProfile,
 } from './lib/server-api'
-import type { TrackedPerson } from './lib/types'
+import type { FitnessPlanDay, FitnessSession, FitnessSessionSummary, TrackedPerson } from './lib/types'
 import { formatFullDate, formatJin, formatKg, jinToKg, kgToJin, todayISO } from './lib/utils'
 import {
   FitnessExercisesPage,
@@ -77,20 +83,38 @@ const dashboardRoute = createRoute({
 
 const entriesRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/entries',
-  component: EntriesPage,
+  path: '/weight',
+  component: WeightEntriesPage,
 })
 
 const reportsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/reports',
-  component: ReportsPage,
+  path: '/weight/trends',
+  component: WeightTrendsPage,
 })
 
-const householdRoute = createRoute({
+const weightGoalRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/weight/goal',
+  component: WeightGoalPage,
+})
+
+const legacyEntriesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/entries',
+  beforeLoad: () => { throw redirect({ to: '/weight' }) },
+})
+
+const legacyReportsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/reports',
+  beforeLoad: () => { throw redirect({ to: '/weight/trends' }) },
+})
+
+const legacyHouseholdRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/household',
-  component: HouseholdPage,
+  beforeLoad: () => { throw redirect({ to: '/settings' }) },
 })
 
 const settingsRoute = createRoute({
@@ -133,7 +157,10 @@ const routeTree = rootRoute.addChildren([
   dashboardRoute,
   entriesRoute,
   reportsRoute,
-  householdRoute,
+  weightGoalRoute,
+  legacyEntriesRoute,
+  legacyReportsRoute,
+  legacyHouseholdRoute,
   fitnessRoute,
   fitnessPlanRoute,
   fitnessExercisesRoute,
@@ -151,11 +178,9 @@ declare module '@tanstack/react-router' {
 }
 
 const navItems = [
-  { to: '/', label: '仪表盘', icon: Home },
+  { to: '/', label: '首页', icon: Home },
   { to: '/fitness', label: '健身', icon: Dumbbell },
-  { to: '/entries', label: '记录', icon: Plus },
-  { to: '/reports', label: '报表', icon: ChartNoAxesCombined },
-  { to: '/household', label: '家庭', icon: Users },
+  { to: '/weight', label: '体重', icon: Scale },
   { to: '/settings', label: '设置', icon: Settings },
 ] as const
 
@@ -166,13 +191,13 @@ function RootLayout() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5 sm:px-6 md:py-3 lg:px-8">
           <Link to="/" className="flex items-center gap-2.5 md:gap-3">
             <span className="flex size-9 items-center justify-center rounded-md bg-sage-dark text-white md:size-10">
-              <Scale size={18} />
+              <Activity size={18} />
             </span>
             <span>
               <span className="block font-display text-lg font-semibold text-ink md:text-xl">
-                体重管理
+                身体管理
               </span>
-              <span className="block text-[11px] text-sage md:text-xs">家庭趋势与目标追踪</span>
+              <span className="block text-[11px] text-sage md:text-xs">训练、状态与长期趋势</span>
             </span>
           </Link>
           <nav className="hidden items-center gap-1 md:flex">
@@ -180,6 +205,7 @@ function RootLayout() {
               <Link
                 key={item.to}
                 to={item.to}
+                activeOptions={{ exact: item.to === '/' }}
                 className="flex h-10 items-center gap-2 rounded-md px-3 text-sm font-medium text-sage-dark transition hover:bg-white"
                 activeProps={{ className: 'bg-white text-ink shadow-sm' }}
               >
@@ -193,11 +219,12 @@ function RootLayout() {
       <main className="mx-auto max-w-7xl px-4 pb-28 pt-4 sm:px-6 md:pb-6 md:pt-6 lg:px-8">
         <Outlet />
       </main>
-      <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-6 border-t border-line bg-white/96 px-1 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-12px_34px_rgba(33,45,40,0.08)] backdrop-blur md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-4 border-t border-line bg-white/96 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-12px_34px_rgba(33,45,40,0.08)] backdrop-blur md:hidden">
         {navItems.map((item) => (
           <Link
             key={item.to}
             to={item.to}
+            activeOptions={{ exact: item.to === '/' }}
             className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-md py-1.5 text-[11px] font-medium text-sage"
             activeProps={{ className: 'bg-mist text-sage-dark' }}
           >
@@ -277,103 +304,185 @@ function RangePicker({
 }
 
 function DashboardPage() {
-  const { data, error, isLoading, person, entries, goal, setPersonId } = useSelectedPerson()
-  const [range, setRange] = useState<TrendRange>('30')
-  if (isLoading) return <ScreenLoading />
+  const { data, error, isLoading, person, entries } = useSelectedPerson()
+  const fitness = useFitnessData()
+  const fitnessHistory = useFitnessHistory()
+  if (isLoading || fitness.isLoading) return <ScreenLoading title="正在整理今天" body="训练安排与身体数据正在同步。" />
   if (error) return <LoginPrompt />
   if (!data || !person) return <LoginPrompt />
 
-  const chartEntries = filterEntriesByRange(entries, range)
   const latest = getLatestEntry(entries)
-  const bmi = latest ? calculateBmi(latest.weight_kg, person.height_cm) : 0
-  const first = getFirstEntry(entries)
-  const progress = getGoalProgressFromEntries(entries, goal)
-  const bestProgress = getBestGoalProgressFromEntries(entries, goal)
-  const goalDetail = goal && latest && first
-    ? `${formatJin(Math.abs(first.weight_kg - latest.weight_kg))} / ${formatJin(Math.abs(first.weight_kg - goal.target_weight_kg))}`
-    : goal
-      ? `${formatJin(goal.target_weight_kg)} 目标`
-      : '未设置目标'
-  const insights = getInsights(entries, goal, person)
+  const fitnessData = fitness.data
+  const activePlan = fitnessData?.plans.find((plan) => plan.id === fitnessData.activePlanId) ?? fitnessData?.plans[0]
+  const todayPlan = activePlan?.days.find((day) => day.weekday === fitnessData?.todayWeekday)
+  const todaySession = fitnessData?.todaySession
+  const trainingDays = activePlan?.days.filter((day) => !day.isRest).length ?? 0
+  const weekStart = new Date()
+  weekStart.setHours(0, 0, 0, 0)
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7))
+  const weekSessions = (fitnessHistory.data ?? []).filter((session) => new Date(`${session.scheduledDate}T00:00:00`) >= weekStart && session.status !== 'skipped')
+  const weekCompletedSets = weekSessions.reduce((sum, session) => sum + session.completedSets, 0)
+  const lastSession = fitnessHistory.data?.[0]
+  const hour = new Date().getHours()
+  const greeting = hour < 11 ? '早上好，今天这样安排' : hour < 18 ? '下午好，保持今天的节奏' : '晚上好，看看今天完成了什么'
+  const workoutAction = todaySession?.status === 'in_progress'
+    ? '继续训练'
+    : todaySession
+      ? '查看今日训练'
+      : todayPlan?.isRest
+        ? '查看恢复安排'
+        : '开始今日训练'
 
   return (
     <div className="space-y-4 md:space-y-6">
-      <PageIntro
-        eyebrow={data.household.name}
-        title="今天的身体趋势，一眼看清"
-        body="记录保持轻量，趋势保持可靠。家庭成员的数据在同一个空间里有序呈现。"
-        action={
-          <PersonPicker
-            people={data.people}
-            value={person.id}
-            onChange={setPersonId}
-          />
-        }
-      />
-
-      <div className="grid grid-cols-2 gap-3 md:hidden">
-        <Link
-          to="/entries"
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-sage-dark px-4 text-sm font-medium text-white shadow-sm"
-        >
-          <Plus size={16} />
-          记一笔
-        </Link>
-        <Link
-          to="/reports"
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-medium text-sage-dark"
-        >
-          <ChartNoAxesCombined size={16} />
-          看趋势
-        </Link>
-      </div>
-
-      <Panel>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-5">
-          <Stat label="最新体重" value={latest ? formatJin(latest.weight_kg) : '--'} detail={latest ? formatFullDate(latest.measured_on) : '暂无记录'} />
-          <Stat label="BMI" value={latest ? bmi.toFixed(1) : '--'} detail={latest ? getBmiLabel(bmi) : '需要身高和体重'} tone="good" />
-          <Stat label="7 天变化" value={formatDelta(getWeightChange(entries, 7))} detail="相对最近可比记录" />
-          <GoalProgressStat
-            label="目标进度"
-            value={progress === null ? '--' : `${progress}%`}
-            detail={goalDetail}
-            best={bestProgress ? `历史最佳 ${bestProgress.progress}%` : undefined}
-          />
+      <section className="home-hero relative overflow-hidden rounded-[1.7rem] bg-[#13251f] px-5 py-6 text-white shadow-[0_28px_80px_rgba(19,37,31,0.2)] sm:px-7 md:py-8">
+        <div className="relative">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#d8f96f]">{new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())}</p>
+          <h1 className="mt-2 max-w-3xl font-display text-4xl font-semibold leading-tight sm:text-5xl">{greeting}</h1>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-white/65">训练是今天的主线，体重只是帮助你观察长期方向。</p>
         </div>
-      </Panel>
+      </section>
 
-      <div className="grid gap-6 lg:grid-cols-[1.4fr_.8fr]">
-        <Panel>
-          <div className="mb-3 flex items-start justify-between md:mb-4">
+      <section className="grid gap-4 lg:grid-cols-[1.35fr_.65fr]">
+        <div className="relative overflow-hidden rounded-[1.5rem] border border-[#29483b] bg-[#193229] p-5 text-white shadow-[0_20px_55px_rgba(19,37,31,0.16)] sm:p-6">
+          <div className="absolute -right-12 -top-14 size-44 rounded-full border border-[#d8f96f]/20" />
+          <div className="relative flex h-full flex-col justify-between gap-6">
             <div>
-              <h2 className="font-display text-xl font-semibold md:text-2xl">体重趋势</h2>
-              <p className="mt-1 text-sm text-sage">含三次记录移动均值，减少日波动误读。</p>
+              <div className="flex items-center justify-between gap-3"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#d8f96f]">Today's training</p>{todaySession?.status === 'in_progress' ? <span className="rounded-full bg-[#d8f96f] px-2.5 py-1 text-[10px] font-bold text-[#18220f]">进行中</span> : null}</div>
+              <h2 className="mt-3 font-display text-3xl font-semibold">{todayPlan?.name ?? '今天暂无训练安排'}</h2>
+              <p className="mt-2 text-sm leading-6 text-white/60">{todayPlan?.focus ?? '恢复也是计划的一部分，保持轻松活动。'}</p>
+              <div className="mt-4 flex flex-wrap gap-2 text-xs text-white/65">
+                <span className="rounded-full bg-white/8 px-3 py-1.5">{todayPlan?.exercises.length ?? 0} 个动作</span>
+                <span className="rounded-full bg-white/8 px-3 py-1.5">预计 {todayPlan?.estimatedMinutes ?? 0} 分钟</span>
+                {todaySession ? <span className="rounded-full bg-white/8 px-3 py-1.5">{todaySession.completedSets}/{todaySession.totalSets} 组</span> : null}
+              </div>
             </div>
-            <div className="flex flex-col items-end gap-2">
-              <Activity className="text-sage-dark" size={22} />
-              <RangePicker value={range} onChange={setRange} />
-            </div>
+            <Link to="/fitness" className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#d8f96f] px-4 text-sm font-semibold text-[#18220f] transition hover:bg-white sm:w-fit">
+              {workoutAction}<ArrowRight size={16} />
+            </Link>
           </div>
-          {chartEntries.length ? <WeightTrendChart person={person} entries={chartEntries} /> : <EmptyState title="暂无趋势" body="添加至少一条记录后开始绘图。" />}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-1">
+          <HomeMetric icon={CalendarCheck} value={`${weekSessions.length}/${trainingDays}`} label="本周训练" detail={`${weekCompletedSets} 组已完成`} />
+          <HomeMetric icon={lastSession?.status === 'completed' ? CheckCircle2 : Activity} value={lastSession?.effortScore ? `${lastSession.effortScore}/10` : '--'} label="上次难度" detail={lastSession ? `${lastSession.name} · ${lastSession.completedSets} 组` : '完成训练后显示'} />
+        </div>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-[.72fr_1.28fr]">
+        <Panel className="flex flex-col justify-between">
+          <div className="flex items-start justify-between gap-3">
+            <div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sage-dark">Body trend</p><h2 className="mt-2 font-display text-2xl font-semibold">最近身体状态</h2></div>
+            <span className="flex size-10 items-center justify-center rounded-full bg-mist text-sage-dark"><Scale size={18} /></span>
+          </div>
+          <div className="mt-6 flex items-end justify-between gap-4">
+            <div><p className="text-3xl font-semibold tabular-nums text-ink">{latest ? formatJin(latest.weight_kg) : '--'}</p><p className="mt-1 text-xs text-sage">{latest ? formatFullDate(latest.measured_on) : '还没有体重记录'}</p></div>
+            <div className="text-right"><p className="text-lg font-semibold tabular-nums text-sage-dark">{formatDelta(getWeightChange(entries, 7))}</p><p className="text-[10px] text-sage">7 天变化</p></div>
+          </div>
+          <Link to="/weight" className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-line bg-white text-sm font-semibold text-sage-dark transition hover:border-sage hover:bg-mist">记录体重<ArrowRight size={15} /></Link>
         </Panel>
 
-        <Panel>
-          <h2 className="font-display text-xl font-semibold md:text-2xl">洞察提醒</h2>
-          <div className="mt-4 space-y-3">
-            {insights.map((insight) => (
-              <div key={insight} className="rounded-md border border-line bg-mist/60 p-3 text-sm leading-6 text-ink">
-                {insight}
-              </div>
-            ))}
-          </div>
-          <div className="mt-5 rounded-md bg-sage-dark p-4 text-white">
-            <p className="text-xs opacity-80">连续记录</p>
-            <p className="mt-1 text-3xl font-semibold tabular-nums">{getStreakDays(entries)} 天</p>
+        <Panel className="relative overflow-hidden">
+          <div className="absolute right-0 top-0 h-full w-1 bg-gradient-to-b from-[#d8f96f] via-mint to-transparent" />
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sage-dark">Today’s note</p>
+          <h2 className="mt-2 font-display text-2xl font-semibold">今天的小建议</h2>
+          <p className="mt-3 max-w-2xl text-sm leading-7 text-sage">{getDailyTrainingNote(todaySession, lastSession, todayPlan?.isRest ?? true)}</p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Link to="/fitness/history" className="rounded-lg bg-mist px-3 py-2 text-xs font-semibold text-sage-dark">查看训练历史</Link>
+            <Link to="/fitness/records" className="rounded-lg bg-mist px-3 py-2 text-xs font-semibold text-sage-dark">查看个人纪录</Link>
           </div>
         </Panel>
-      </div>
+      </section>
     </div>
   )
+}
+
+function HomeMetric({ icon: Icon, value, label, detail }: { icon: typeof Activity; value: string; label: string; detail: string }) {
+  return <Panel className="flex min-h-32 flex-col justify-between"><div className="flex items-center justify-between"><p className="text-xs font-semibold text-sage-dark">{label}</p><Icon size={18} className="text-sage" /></div><div><p className="text-3xl font-semibold tabular-nums text-ink">{value}</p><p className="mt-1 truncate text-[11px] text-sage">{detail}</p></div></Panel>
+}
+
+function getDailyTrainingNote(todaySession: FitnessSession | null | undefined, lastSession: FitnessSessionSummary | undefined, isRestDay: FitnessPlanDay['isRest']) {
+  if (todaySession?.painFlag || lastSession?.painFlag) return '最近记录过疼痛或异常不适。今天优先检查动作感受，必要时降低重量、减少组数或改为恢复训练。'
+  if (todaySession?.status === 'completed') return '今天的训练已经完成。补充水分和蛋白质，今晚把睡眠放在第一位。'
+  if (isRestDay) return '今天是恢复日。轻松走路、活动肩髋并保证睡眠，会让下一次训练更有质量。'
+  if ((lastSession?.effortScore ?? 0) >= 9) return '上次训练难度接近极限，今天建议保留 2 次左右余力，不需要连续两次拼到极限。'
+  return '按照计划完成主要动作，工作组保持 1–2 RIR。状态好可以加一组，但动作质量始终优先。'
+}
+
+const WEIGHT_NAV = [
+  { to: '/weight', label: '记录' },
+  { to: '/weight/trends', label: '趋势' },
+  { to: '/weight/goal', label: '目标' },
+] as const
+
+function WeightModuleHeader({ title, body }: { title: string; body: string }) {
+  return <>
+    <PageIntro eyebrow="Weight" title={title} body={body} />
+    <nav className="grid grid-cols-3 rounded-xl border border-line bg-white/90 p-1.5 shadow-sm">
+      {WEIGHT_NAV.map((item) => <Link key={item.to} to={item.to} activeOptions={{ exact: item.to === '/weight' }} className="flex h-10 items-center justify-center rounded-lg text-sm font-semibold text-sage transition hover:bg-mist" activeProps={{ className: 'bg-[#13251f] text-white shadow-sm' }}>{item.label}</Link>)}
+    </nav>
+  </>
+}
+
+function WeightEntriesPage() {
+  return <div className="space-y-4 md:space-y-6"><WeightModuleHeader title="记录身体的长期变化" body="体重是趋势数据，不是每天的成绩单。保持相近条件记录即可。" /><EntriesPage /></div>
+}
+
+function WeightTrendsPage() {
+  return <div className="space-y-4 md:space-y-6"><WeightModuleHeader title="看方向，不被日波动干扰" body="通过移动均值、区间变化和 BMI 观察长期趋势。" /><ReportsPage /></div>
+}
+
+function WeightGoalPage() {
+  const { data, error, isLoading, person, entries, goal, setPersonId } = useSelectedPerson()
+  const upsertGoal = useUpsertGoal()
+  const [goalWeightJin, setGoalWeightJin] = useState('')
+  const [goalDate, setGoalDate] = useState('')
+  if (isLoading) return <ScreenLoading />
+  if (error || !data || !person) return <LoginPrompt />
+  const selectedPerson = person
+  const firstEntry = getFirstEntry(entries)
+  const latest = getLatestEntry(entries)
+  const effectiveGoalWeight = goalWeightJin || (goal ? kgToJin(goal.target_weight_kg).toFixed(1) : '')
+  const effectiveGoalDate = goalDate || goal?.target_on || ''
+  const progress = getGoalProgressFromEntries(entries, goal)
+
+  function saveGoal(event: FormEvent) {
+    event.preventDefault()
+    const targetWeightKg = jinToKg(Number(effectiveGoalWeight))
+    if (!Number.isFinite(targetWeightKg) || targetWeightKg < 20 || targetWeightKg > 300) return
+    upsertGoal.mutate({ trackedPersonId: selectedPerson.id, startWeightKg: firstEntry?.weight_kg ?? goal?.start_weight_kg ?? targetWeightKg, targetWeightKg, targetOn: effectiveGoalDate || null })
+    setGoalWeightJin(kgToJin(targetWeightKg).toFixed(1))
+    setGoalDate(effectiveGoalDate)
+  }
+
+  return <div className="space-y-4 md:space-y-6">
+    <WeightModuleHeader title="给长期变化一个方向" body="目标用于观察趋势，不要求体重每天都向同一个方向移动。" />
+    <div className="grid gap-4 lg:grid-cols-[.8fr_1.2fr] lg:gap-6">
+      <Panel>
+        <PageSectionTitle title="设置目标" body="为不同成员分别维护目标体重和日期。" />
+        <form className="mt-5 grid gap-4" onSubmit={saveGoal}>
+          <div className="space-y-2"><Label>成员</Label><PersonPicker people={data.people} value={selectedPerson.id} onChange={(value) => { setPersonId(value); setGoalWeightJin(''); setGoalDate('') }} /></div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2"><Label>目标体重</Label><div className="relative"><Input className="pr-14" inputMode="decimal" placeholder="130.0" value={effectiveGoalWeight} onChange={(event) => setGoalWeightJin(event.target.value)} /><span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm font-medium text-sage-dark">斤</span></div></div>
+            <div className="space-y-2"><Label>目标日期</Label><Input type="date" value={effectiveGoalDate} onChange={(event) => setGoalDate(event.target.value)} /></div>
+          </div>
+          <Button type="submit" disabled={upsertGoal.isPending || !effectiveGoalWeight}>{upsertGoal.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Scale size={16} />}{upsertGoal.isPending ? '保存中...' : '保存目标'}</Button>
+        </form>
+      </Panel>
+      <Panel className="relative overflow-hidden">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-sage-dark via-mint to-[#d8f96f]" />
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sage-dark">Goal progress</p>
+        <h2 className="mt-2 font-display text-3xl font-semibold">当前进度</h2>
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <MetricTile label="当前体重" value={latest ? formatJin(latest.weight_kg) : '--'} detail={latest ? formatFullDate(latest.measured_on) : '暂无记录'} />
+          <MetricTile label="目标体重" value={goal ? formatJin(goal.target_weight_kg) : '--'} detail={goal?.target_on || '尚未设置'} />
+          <MetricTile label="目标进度" value={progress === null ? '--' : `${progress}%`} detail="从首次记录开始" tone="good" />
+        </div>
+        <div className="mt-5 h-2 overflow-hidden rounded-full bg-mist"><div className="h-full rounded-full bg-sage-dark transition-all" style={{ width: `${Math.min(100, Math.max(0, progress ?? 0))}%` }} /></div>
+        <p className="mt-4 text-sm leading-6 text-sage">关注 2–4 周的趋势，而不是单日变化。训练、饮食、睡眠和水分都会影响体重。</p>
+      </Panel>
+    </div>
+  </div>
 }
 
 function EntriesPage() {
@@ -509,17 +618,7 @@ function ReportsPage() {
 
   return (
     <div className="space-y-4 md:space-y-6">
-      <PageIntro
-        eyebrow="Reports"
-        title="趋势、BMI 和家庭对比"
-        body="用少量图表覆盖最重要的变化：方向、速度、区间和成员差异。"
-        action={
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <RangePicker value={range} onChange={setRange} />
-            <PersonPicker people={data.people} value={person.id} onChange={setPersonId} />
-          </div>
-        }
-      />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end"><RangePicker value={range} onChange={setRange} /><PersonPicker people={data.people} value={person.id} onChange={setPersonId} /></div>
       <Panel>
         <PageSectionTitle title="区间概览" body="把这一段时间的记录质量、波动和趋势速度拆开看。" />
         {summary ? (
@@ -762,28 +861,12 @@ function SettingsPage() {
   const [birthDate, setBirthDate] = useState('')
   const [authMessage, setAuthMessage] = useState('')
   const [profileMessage, setProfileMessage] = useState('')
-  const [goalPersonId, setGoalPersonId] = useState('')
-  const [goalWeightJin, setGoalWeightJin] = useState('')
-  const [goalDate, setGoalDate] = useState('')
   const [isSigningIn, setIsSigningIn] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [isSavingProfile, setIsSavingProfile] = useState(false)
-  const upsertGoal = useUpsertGoal()
   const effectiveHeightCm = heightCm || String(currentPerson?.height_cm ?? 170)
   const effectiveBirthDate = birthDate || currentPerson?.birth_date || ''
   const effectiveDisplayName = displayName || currentPerson?.name || ''
-  const selectedGoalPerson =
-    data?.people.find((person) => person.id === goalPersonId) ?? currentPerson
-  const selectedGoal = selectedGoalPerson
-    ? data?.goals.find((goal) => goal.tracked_person_id === selectedGoalPerson.id)
-    : null
-  const selectedGoalEntries = selectedGoalPerson
-    ? data?.entries.filter((entry) => entry.tracked_person_id === selectedGoalPerson.id) ?? []
-    : []
-  const firstGoalEntry = getFirstEntry(selectedGoalEntries)
-  const effectiveGoalWeightJin =
-    goalWeightJin || (selectedGoal ? kgToJin(selectedGoal.target_weight_kg).toFixed(1) : '')
-  const effectiveGoalDate = goalDate || selectedGoal?.target_on || ''
   const personalCsv = useMemo(
     () => (data && currentPerson ? exportEntriesCsv(currentPersonEntries, [currentPerson]) : ''),
     [currentPerson, currentPersonEntries, data],
@@ -872,21 +955,6 @@ function SettingsPage() {
       })
   }
 
-  function saveGoal(event: FormEvent) {
-    event.preventDefault()
-    if (!selectedGoalPerson) return
-    const targetWeightKg = jinToKg(Number(effectiveGoalWeightJin))
-    if (!Number.isFinite(targetWeightKg) || targetWeightKg < 20 || targetWeightKg > 300) return
-    upsertGoal.mutate({
-      trackedPersonId: selectedGoalPerson.id,
-      startWeightKg: firstGoalEntry?.weight_kg ?? selectedGoal?.start_weight_kg ?? targetWeightKg,
-      targetWeightKg,
-      targetOn: effectiveGoalDate || null,
-    })
-    setGoalWeightJin(targetWeightKg ? kgToJin(targetWeightKg).toFixed(1) : '')
-    setGoalDate(effectiveGoalDate)
-  }
-
   if (isLoading) {
     return (
       <ScreenLoading
@@ -920,7 +988,7 @@ function SettingsPage() {
       <Panel>
         <PageSectionTitle
           title="账号"
-          body={isSignedIn ? '体重记录会保存在你的账号下。' : '登录后开始记录体重，历史数据会跟随账号保存。'}
+          body={isSignedIn ? '训练与身体数据会保存在你的账号下。' : '登录后，训练计划和身体趋势会跟随账号保存。'}
         />
         {isSignedIn ? (
           <div className="mt-5 space-y-4">
@@ -1008,57 +1076,7 @@ function SettingsPage() {
         )}
         {profileMessage ? <p className="mt-3 text-sm text-sage-dark">{profileMessage}</p> : null}
       </Panel>
-      <Panel>
-        <PageSectionTitle
-          title="目标设置"
-          body={isSignedIn ? '给自己或家庭成员设置目标体重，仪表盘会自动计算进度。' : '登录后可以设置目标体重。'}
-        />
-        {isSignedIn && data && selectedGoalPerson ? (
-          <form className="mt-5 grid gap-3 sm:grid-cols-2" onSubmit={saveGoal}>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>成员</Label>
-              <PersonPicker
-                people={data.people}
-                value={selectedGoalPerson.id}
-                onChange={(value) => {
-                  setGoalPersonId(value)
-                  setGoalWeightJin('')
-                  setGoalDate('')
-                }}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>目标体重</Label>
-              <div className="relative">
-                <Input
-                  className="pr-14"
-                  inputMode="decimal"
-                  placeholder="130.0"
-                  value={effectiveGoalWeightJin}
-                  onChange={(event) => setGoalWeightJin(event.target.value)}
-                />
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm font-medium text-sage-dark">
-                  斤
-                </span>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>目标日期</Label>
-              <Input
-                type="date"
-                value={effectiveGoalDate}
-                onChange={(event) => setGoalDate(event.target.value)}
-              />
-            </div>
-            <Button className="sm:col-span-2" type="submit" disabled={upsertGoal.isPending || !effectiveGoalWeightJin}>
-              {upsertGoal.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Scale size={16} />}
-              {upsertGoal.isPending ? '保存中...' : '保存目标'}
-            </Button>
-          </form>
-        ) : (
-          <EmptyState title="请先登录" body="登录后可以为家庭成员设置目标体重。" />
-        )}
-      </Panel>
+      {isSignedIn ? <div className="lg:col-span-2"><HouseholdPage /></div> : null}
       <Panel>
         <PageSectionTitle title="数据管理" body="本人和家庭数据分开导出，避免成员记录混在一起。" />
         <div className="mt-5 grid gap-3">
@@ -1153,31 +1171,6 @@ function MetricTile({
   )
 }
 
-function GoalProgressStat({
-  label,
-  value,
-  detail,
-  best,
-}: {
-  label: string
-  value: string
-  detail: string
-  best?: string
-}) {
-  return (
-    <div className="rounded-md border border-line bg-white p-3 shadow-sm md:border-l md:border-y-0 md:border-r-0 md:bg-transparent md:p-0 md:pl-4 md:shadow-none">
-      <p className="text-xs font-medium text-sage-dark">{label}</p>
-      <p className="mt-1 text-[1.65rem] font-semibold leading-none tabular-nums text-ink md:text-2xl md:leading-normal">
-        {value}
-      </p>
-      <div className="mt-2 flex items-end justify-between gap-2 text-xs leading-4 md:mt-1">
-        <span className="min-w-0 text-sage">{detail}</span>
-        {best ? <span className="shrink-0 text-right text-sage">{best}</span> : null}
-      </div>
-    </div>
-  )
-}
-
 function InsightRow({
   label,
   value,
@@ -1268,9 +1261,9 @@ function LoginPrompt() {
   return (
     <Panel className="mx-auto max-w-xl">
       <div className="py-6 text-center">
-        <p className="font-display text-3xl font-semibold text-ink">先登录，再记录</p>
+        <p className="font-display text-3xl font-semibold text-ink">先登录，再开始</p>
         <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-sage">
-          体重数据会同步到你的账号。登录后可以查看趋势、历史记录和导出数据。
+          训练计划、训练记录与体重趋势会同步到你的账号。
         </p>
         <Link
           to="/settings"

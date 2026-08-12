@@ -9,6 +9,8 @@ vi.mock('./lib/server-api', () => ({
   addServerWeightEntry: vi.fn(),
   createServerTrackedPerson: vi.fn(),
   loadWeightAppData: vi.fn(() => Promise.reject(new Error('未登录'))),
+  loadFitnessBootstrap: vi.fn(() => Promise.reject(new Error('未登录'))),
+  loadFitnessHistory: vi.fn(() => Promise.reject(new Error('未登录'))),
   isAuthenticationError: vi.fn(
     (error: unknown) => error instanceof Error && error.message === '未登录',
   ),
@@ -36,8 +38,8 @@ describe('router app shell', () => {
         <RouterProvider router={router} />
       </QueryClientProvider>,
     )
-    expect(await screen.findByText('体重管理')).toBeInTheDocument()
-    expect(await screen.findByText('先登录，再记录')).toBeInTheDocument()
+    expect(await screen.findByText('身体管理')).toBeInTheDocument()
+    expect(await screen.findByText('先登录，再开始')).toBeInTheDocument()
   })
 
   it('keeps the settings login form hidden while authentication is loading', async () => {
