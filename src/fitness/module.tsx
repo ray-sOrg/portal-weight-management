@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
+  BookOpen,
   CalendarDays,
   Check,
   ChevronDown,
@@ -21,12 +22,16 @@ import {
   Search,
   Settings2,
   SkipForward,
+  Sparkles,
   Trash2,
   TrendingUp,
+  Trophy,
+  X,
 } from 'lucide-react'
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
+import { CSSProperties, FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
 import { Button, EmptyState, Input, Label, Panel } from '@/components/ui'
 import {
+  useAddFitnessSet,
   useArchiveFitnessExercise,
   useActivateFitnessPlan,
   useCopyFitnessPlan,
@@ -54,6 +59,8 @@ import type {
   FitnessPlan,
   FitnessPlanDay,
   FitnessPlanExercise,
+  FitnessPlanInput,
+  FitnessSession,
   FitnessSessionExercise,
   FitnessSessionSummary,
   FitnessSet,
@@ -98,6 +105,48 @@ const EMPTY_EXERCISE: FitnessExerciseInput = {
   cautions: '',
   progressionNotes: '',
   isActive: true,
+}
+
+function createBlankPlanInput(name: string, durationWeeks: number): FitnessPlanInput {
+  return {
+    trackedPersonId: null,
+    name,
+    description: null,
+    durationWeeks,
+    startDate: null,
+    isActive: true,
+    days: WEEKDAYS.map((weekday, index) => ({
+      weekday: index + 1,
+      name: weekday,
+      focus: null,
+      isRest: true,
+      estimatedMinutes: null,
+      notes: null,
+      exercises: [],
+    })),
+  }
+}
+
+function formatSavedTime(value: string | null) {
+  if (!value) return '尚未保存'
+  return `已保存于 ${new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))}`
+}
+
+function readinessColor(score: number) {
+  const colors = ['#d85a4f', '#df874e', '#c2a33f', '#6f9f62', '#2f765c']
+  return colors[Math.min(colors.length - 1, Math.max(0, score - 1))]
+}
+
+function effortGradient() {
+  return 'linear-gradient(to right, #4f9b70 0%, #d0a23e 55%, #e05e50 100%)'
+}
+
+function exerciseUsesExternalWeight(exercise: FitnessSessionExercise) {
+  const equipment = exercise.equipment ?? ''
+  return ['杠铃', '哑铃', '壶铃', '臂力棒'].some((item) => equipment.includes(item))
 }
 
 function FitnessShell({
@@ -217,7 +266,9 @@ export function FitnessTodayPage() {
   const finishSession = useFinishFitnessSession()
   const saveFeedback = useSaveFitnessFeedback()
   const saveSet = useSaveFitnessSet()
+  const addSet = useAddFitnessSet()
   const restTimer = useRestTimer()
+  const [celebration, setCelebration] = useState<FitnessSession | null>(null)
   if (isLoading) return <FitnessLoading />
   if (error) return <FitnessError message={error.message} />
   if (!data) return <FitnessError message="训练数据读取失败。" />
@@ -226,6 +277,9 @@ export function FitnessTodayPage() {
   const todayDay = activePlan.days.find((day) => day.weekday === data.todayWeekday)
   const session = data.todaySession
   const trainingDays = activePlan.days.filter((day) => !day.isRest).length
+  const activeSetId = session?.status === 'in_progress'
+    ? session.exercises.flatMap((exercise) => exercise.sets).find((item) => !item.completed)?.id
+    : undefined
 
   return (
     <FitnessShell
@@ -287,7 +341,11 @@ export function FitnessTodayPage() {
                     key={exercise.id}
                     exercise={exercise}
                     index={index}
-                    savingSetId={saveSet.variables?.id}
+                    activeSetId={activeSetId}
+                    savingSetId={saveSet.isPending ? saveSet.variables?.id : undefined}
+                    addingSet={addSet.isPending && addSet.variables === exercise.id}
+                    canAddSet={session.status === 'in_progress'}
+                    onAddSet={() => addSet.mutate(exercise.id)}
                     onSave={(input, restSeconds) =>
                       saveSet.mutate(input, {
                         onSuccess: () => {
@@ -302,7 +360,9 @@ export function FitnessTodayPage() {
                 key={`${session.id}-${session.updatedAt}`}
                 session={session}
                 pending={finishSession.isPending || saveFeedback.isPending}
-                onSubmit={(input) => session.status === 'in_progress' ? finishSession.mutate(input) : saveFeedback.mutate(input)}
+                onSubmit={(input) => session.status === 'in_progress'
+                  ? finishSession.mutate(input, { onSuccess: setCelebration })
+                  : saveFeedback.mutate(input)}
               />
             </>
           ) : (
@@ -321,6 +381,7 @@ export function FitnessTodayPage() {
         <EmptyState title="今天是恢复日" body={todayDay?.notes || '走路、拉伸和睡眠同样属于训练计划。'} />
       )}
       {restTimer.visible ? <RestTimer {...restTimer} /> : null}
+      {celebration ? <WorkoutCelebration session={celebration} onClose={() => setCelebration(null)} /> : null}
     </FitnessShell>
   )
 }
@@ -349,13 +410,13 @@ function WorkoutFeedbackForm({ session, pending, onSubmit }: {
         <fieldset>
           <legend className="text-xs font-semibold uppercase tracking-[0.08em] text-sage-dark">训练前状态</legend>
           <div className="mt-2 grid grid-cols-5 gap-1.5">
-            {[1, 2, 3, 4, 5].map((score) => <button key={score} type="button" onClick={() => setReadinessScore(score)} className={cn('h-10 rounded-lg border text-sm font-semibold transition', readinessScore === score ? 'border-[#13251f] bg-[#13251f] text-[#d8f96f]' : 'border-line bg-mist text-sage-dark hover:border-sage')}>{score}</button>)}
+            {[1, 2, 3, 4, 5].map((score) => <button key={score} type="button" onClick={() => setReadinessScore(score)} className={cn('h-10 rounded-lg border text-sm font-semibold transition', readinessScore === score ? 'border-transparent text-white shadow-sm' : 'border-line bg-mist text-sage-dark hover:border-sage')} style={readinessScore === score ? { background: readinessColor(score) } : undefined}>{score}</button>)}
           </div>
           <div className="mt-1 flex justify-between text-[10px] text-sage"><span>很疲劳</span><span>状态很好</span></div>
         </fieldset>
         <label>
           <span className="text-xs font-semibold uppercase tracking-[0.08em] text-sage-dark">本次难度 · {effortScore}/10</span>
-          <input type="range" min="1" max="10" value={effortScore} onChange={(event) => setEffortScore(Number(event.target.value))} className="mt-4 w-full accent-[#355e4d]" />
+          <input type="range" min="1" max="10" value={effortScore} onChange={(event) => setEffortScore(Number(event.target.value))} className="fitness-effort-range mt-4 w-full" style={{ background: effortGradient() }} />
           <span className="mt-1 flex justify-between text-[10px] text-sage"><span>轻松</span><span>接近极限</span></span>
         </label>
         <label className="lg:col-span-2">
@@ -374,6 +435,47 @@ function WorkoutFeedbackForm({ session, pending, onSubmit }: {
         <Button type="submit" disabled={pending || (painFlag && !painNotes.trim())}><Check size={17} />{pending ? '保存中' : session.status === 'in_progress' ? '保存复盘并结束训练' : '更新训练复盘'}</Button>
       </div>
     </form>
+  )
+}
+
+function WorkoutCelebration({ session, onClose }: { session: FitnessSession; onClose: () => void }) {
+  const completedAll = session.status === 'completed'
+  const encouragement = completedAll
+    ? '今天的每一组，都已经变成明天更强的底气。'
+    : '懂得按状态调整，也是一种长期主义。今天已经做得很好。'
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#0b1914]/70 p-4 backdrop-blur-md" role="presentation">
+      <section className="relative w-full max-w-md overflow-hidden rounded-[1.75rem] border border-[#d8f96f]/30 bg-[#13251f] p-6 text-center text-white shadow-[0_32px_100px_rgba(0,0,0,0.4)] sm:p-8" role="dialog" aria-modal="true" aria-labelledby="workout-complete-title">
+        <div className="fitness-celebration-burst" aria-hidden="true">
+          {Array.from({ length: 12 }, (_, index) => <span key={index} style={{ '--burst-index': index } as CSSProperties} />)}
+        </div>
+        <div className="relative">
+          <div className="mx-auto flex size-20 items-center justify-center rounded-full border border-[#d8f96f]/30 bg-[#d8f96f]/10 text-[#d8f96f] shadow-[0_0_50px_rgba(216,249,111,0.18)]">
+            {completedAll ? <Trophy size={36} /> : <Sparkles size={36} />}
+          </div>
+          <p className="mt-5 text-[10px] font-semibold uppercase tracking-[0.24em] text-[#d8f96f]">Workout complete</p>
+          <h2 id="workout-complete-title" className="mt-2 font-display text-4xl font-semibold">训练完成</h2>
+          <p className="mx-auto mt-3 max-w-xs text-sm leading-6 text-white/65">{encouragement}</p>
+          <div className="mt-6 grid grid-cols-3 gap-2">
+            <CelebrationStat value={`${session.completedSets}`} label="完成组数" />
+            <CelebrationStat value={`${session.progressPercent}%`} label="计划进度" />
+            <CelebrationStat value={formatNumber(session.totalVolumeKg)} label="训练容量 kg" />
+          </div>
+          <Button type="button" className="mt-6 w-full bg-[#d8f96f] text-[#18220f] hover:bg-white" onClick={onClose}>
+            <Check size={17} />收下今天的进步
+          </Button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function CelebrationStat({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 px-2 py-3">
+      <p className="text-xl font-semibold tabular-nums text-[#d8f96f]">{value}</p>
+      <p className="mt-1 text-[9px] text-white/45">{label}</p>
+    </div>
   )
 }
 
@@ -403,20 +505,29 @@ function SessionProgress({ session }: { session: NonNullable<FitnessBootstrap['t
 function WorkoutExerciseCard({
   exercise,
   index,
+  activeSetId,
   savingSetId,
+  addingSet,
+  canAddSet,
+  onAddSet,
   onSave,
 }: {
   exercise: FitnessSessionExercise
   index: number
+  activeSetId?: number
   savingSetId?: number
+  addingSet: boolean
+  canAddSet: boolean
+  onAddSet: () => void
   onSave: (input: Parameters<ReturnType<typeof useSaveFitnessSet>['mutate']>[0], restSeconds: number | null) => void
 }) {
+  const [showDetails, setShowDetails] = useState(false)
   const previousSetByNumber = useMemo(
     () => new Map(exercise.previousSets.map((item) => [item.setNumber, item])),
     [exercise.previousSets],
   )
-  return (
-    <article className="fitness-list-item overflow-hidden rounded-2xl border border-line bg-white shadow-[0_12px_40px_rgba(25,32,31,0.05)]">
+  return <>
+    <article className={cn('fitness-list-item overflow-hidden rounded-2xl border bg-white shadow-[0_12px_40px_rgba(25,32,31,0.05)] transition', activeSetId && exercise.sets.some((item) => item.id === activeSetId) ? 'border-sage/60 shadow-[0_16px_45px_rgba(53,94,77,0.12)]' : 'border-line')}>
       <div className="flex gap-3 border-b border-line p-4">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#13251f] font-display text-xl font-semibold text-[#d8f96f]">
           {String(index + 1).padStart(2, '0')}
@@ -431,6 +542,10 @@ function WorkoutExerciseCard({
             目标 {formatSessionExerciseTarget(exercise)}{exercise.restSeconds ? ` · 休息 ${formatDuration(exercise.restSeconds)}` : ''}
           </p>
         </div>
+        <button type="button" onClick={() => setShowDetails(true)} className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-mist px-2.5 text-xs font-semibold text-sage-dark transition hover:border-sage hover:bg-mint/30" aria-label={`查看${exercise.exerciseName}动作详解`}>
+          <BookOpen size={15} />
+          <span className="hidden sm:inline">详解</span>
+        </button>
       </div>
       <div className="divide-y divide-line">
         {exercise.sets.map((fitnessSet) => (
@@ -440,19 +555,30 @@ function WorkoutExerciseCard({
             exercise={exercise}
             previousSet={previousSetByNumber.get(fitnessSet.setNumber)}
             pending={savingSetId === fitnessSet.id}
+            active={activeSetId === fitnessSet.id}
             onSave={onSave}
           />
         ))}
       </div>
+      {canAddSet ? (
+        <div className="border-t border-line bg-mist/45 p-3 text-center">
+          <button type="button" onClick={onAddSet} disabled={addingSet} className="inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-semibold text-sage-dark transition hover:bg-mint/45 disabled:cursor-wait disabled:opacity-60">
+            {addingSet ? <LoaderCircle className="animate-spin" size={15} /> : <Plus size={15} />}
+            {addingSet ? '正在加组' : '状态不错，加一组'}
+          </button>
+        </div>
+      ) : null}
     </article>
-  )
+    {showDetails ? <ExerciseDetailDialog exercise={exercise} onClose={() => setShowDetails(false)} /> : null}
+  </>
 }
 
-function WorkoutSetRow({ fitnessSet, exercise, previousSet, pending, onSave }: {
+function WorkoutSetRow({ fitnessSet, exercise, previousSet, pending, active, onSave }: {
   fitnessSet: FitnessSet
   exercise: FitnessSessionExercise
   previousSet?: FitnessSet
   pending: boolean
+  active: boolean
   onSave: (input: Parameters<ReturnType<typeof useSaveFitnessSet>['mutate']>[0], restSeconds: number | null) => void
 }) {
   const [reps, setReps] = useState(() => String(fitnessSet.completed ? fitnessSet.actualReps ?? '' : fitnessSet.actualReps ?? previousSet?.actualReps ?? exercise.repsMin ?? ''))
@@ -463,22 +589,25 @@ function WorkoutSetRow({ fitnessSet, exercise, previousSet, pending, onSave }: {
     id: fitnessSet.id,
     actualReps: exercise.metricType === 'reps' ? nullableNumber(reps) : null,
     actualDurationSeconds: exercise.metricType === 'duration' ? nullableNumber(duration) : null,
-    actualWeightKg: nullableNumber(weight),
+    actualWeightKg: exerciseUsesExternalWeight(exercise) ? nullableNumber(weight) : null,
     rir: nullableNumber(rir),
     completed: !fitnessSet.completed,
   }, exercise.restSeconds)
 
   return (
-    <div className={cn('grid gap-3 px-4 py-3 sm:grid-cols-[3rem_1fr_auto] sm:items-end', fitnessSet.completed && 'bg-mint/20')}>
+    <div className={cn('relative grid gap-3 px-4 py-3 transition sm:grid-cols-[3rem_1fr_auto] sm:items-end', fitnessSet.completed && 'bg-mint/20', active && 'fitness-active-set bg-[#f2f9e4]')}>
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-wide text-sage">组</p>
-        <p className="mt-1 font-semibold tabular-nums">{fitnessSet.setNumber}</p>
+        <div className="mt-1 flex items-center gap-2">
+          <p className="font-semibold tabular-nums">{fitnessSet.setNumber}</p>
+          {active ? <span className="fitness-live-indicator" aria-label="当前正在进行"><span /><span /><span /></span> : null}
+        </div>
         {previousSet && !fitnessSet.completed ? <p className="mt-1 text-[9px] font-semibold text-sage-dark">沿用上次</p> : null}
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {exercise.metricType === 'reps' ? <CompactInput label="次数" value={reps} onChange={setReps} /> : null}
         {exercise.metricType === 'duration' ? <CompactInput label="秒" value={duration} onChange={setDuration} /> : null}
-        {exercise.category === 'strength' ? <CompactInput label="重量 kg" value={weight} onChange={setWeight} step="0.5" /> : null}
+        {exerciseUsesExternalWeight(exercise) ? <CompactInput label="重量 kg" value={weight} onChange={setWeight} step="0.5" /> : null}
         {exercise.rirMin !== null ? <CompactInput label="RIR" value={rir} onChange={setRir} /> : null}
       </div>
       <Button
@@ -488,8 +617,102 @@ function WorkoutSetRow({ fitnessSet, exercise, previousSet, pending, onSave }: {
         onClick={toggleSet}
         disabled={pending}
       >
-        {fitnessSet.completed ? <><Pause size={16} />撤销</> : <><Check size={16} />{pending ? '保存中' : '完成'}</>}
+        {pending
+          ? <><LoaderCircle className="animate-spin" size={16} />处理中</>
+          : fitnessSet.completed
+            ? <><Pause size={16} />撤销完成</>
+            : <><Check size={16} />完成</>}
       </Button>
+    </div>
+  )
+}
+
+function ExerciseDetailDialog({ exercise, onClose }: {
+  exercise: FitnessSessionExercise
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#0e1f19]/55 p-3 backdrop-blur-sm sm:items-center" role="presentation" onMouseDown={onClose}>
+      <section className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-[1.5rem] border border-white/60 bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby={`exercise-detail-${exercise.id}`} onMouseDown={(event) => event.stopPropagation()}>
+        <div className="relative overflow-hidden bg-[#13251f] p-5 text-white sm:p-6">
+          <div className="absolute -right-10 -top-10 size-36 rounded-full border border-[#d8f96f]/25" />
+          <button type="button" onClick={onClose} className="absolute right-4 top-4 z-10 flex size-9 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20" aria-label="关闭动作详解"><X size={18} /></button>
+          <div className="relative grid gap-5 sm:grid-cols-[1fr_11rem] sm:items-center">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#d8f96f]">Movement guide</p>
+              <h2 id={`exercise-detail-${exercise.id}`} className="mt-2 font-display text-3xl font-semibold">{exercise.exerciseName}</h2>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/70">
+                <span className="rounded-full bg-white/10 px-2.5 py-1">{CATEGORY_LABELS[exercise.category]}</span>
+                {exercise.primaryMuscle ? <span className="rounded-full bg-white/10 px-2.5 py-1">{exercise.primaryMuscle}</span> : null}
+                {exercise.equipment ? <span className="rounded-full bg-white/10 px-2.5 py-1">{exercise.equipment}</span> : null}
+              </div>
+            </div>
+            <ExerciseIllustration exercise={exercise} />
+          </div>
+        </div>
+        <div className="grid gap-4 p-5 sm:p-6">
+          <DetailSection number="01" title="动作要领" body={exercise.instructions || '保持动作稳定，在自己可控的活动范围内完成。'} />
+          <DetailSection number="02" title="本次训练提示" body={exercise.planNotes || `完成 ${formatSessionExerciseTarget(exercise)}。`} />
+          <DetailSection number="03" title="安全注意" body={exercise.cautions || '出现锐痛或关节不适时立即停止，不要为了完成次数牺牲动作质量。'} tone="warning" />
+          {exercise.progressionType ? <DetailSection number="04" title="进阶方式" body={exercise.progressionType} /> : null}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function ExerciseIllustration({ exercise }: { exercise: FitnessSessionExercise }) {
+  const isLowerBody = exercise.primaryMuscle?.includes('腿') || exercise.primaryMuscle?.includes('后链') || exercise.primaryMuscle?.includes('臀')
+  return (
+    <div className="relative mx-auto flex aspect-square w-36 items-center justify-center overflow-hidden rounded-[1.3rem] border border-white/10 bg-white/5">
+      <div className="absolute inset-x-5 bottom-5 h-px bg-white/15" />
+      <svg viewBox="0 0 160 160" className="size-full" role="img" aria-label={`${exercise.exerciseName}动作示意`}>
+        <circle cx="80" cy="42" r="13" fill="#d8f96f" />
+        <g fill="none" stroke="#f4f8f5" strokeLinecap="round" strokeLinejoin="round" strokeWidth="8">
+          {isLowerBody ? (
+            <>
+              <path d="M79 58 L72 91 L101 105" />
+              <path d="M73 90 L49 112 L38 137" />
+              <path d="M101 105 L119 137" />
+              <path d="M75 67 L47 83" />
+              <path d="M75 67 L108 82" />
+              <path d="M37 77 L116 77" stroke="#d8f96f" strokeWidth="5" />
+            </>
+          ) : (
+            <>
+              <path d="M80 58 L80 104" />
+              <path d="M80 70 L46 91" />
+              <path d="M80 70 L114 91" />
+              <path d="M80 103 L58 137" />
+              <path d="M80 103 L102 137" />
+              <path d="M36 91 L124 91" stroke="#d8f96f" strokeWidth="5" />
+            </>
+          )}
+        </g>
+      </svg>
+      <span className="absolute bottom-2 right-2 rounded-full bg-[#d8f96f] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#13251f]">示意</span>
+    </div>
+  )
+}
+
+function DetailSection({ number, title, body, tone = 'default' }: {
+  number: string
+  title: string
+  body: string
+  tone?: 'default' | 'warning'
+}) {
+  return (
+    <div className={cn('grid grid-cols-[2rem_1fr] gap-3 rounded-xl border p-3.5', tone === 'warning' ? 'border-coral/25 bg-coral/5' : 'border-line bg-mist/55')}>
+      <span className={cn('font-display text-lg font-semibold', tone === 'warning' ? 'text-coral' : 'text-sage')}>{number}</span>
+      <div><h3 className="text-sm font-semibold text-ink">{title}</h3><p className="mt-1 text-sm leading-6 text-sage">{body}</p></div>
     </div>
   )
 }
@@ -506,17 +729,26 @@ function CompactInput({ label, value, onChange, step = '1' }: { label: string; v
 function useRestTimer() {
   const [seconds, setSeconds] = useState(0)
   const [visible, setVisible] = useState(false)
+  const [endsAt, setEndsAt] = useState<number | null>(null)
   useEffect(() => {
-    if (!visible || seconds <= 0) return
-    const timer = window.setInterval(() => setSeconds((current) => Math.max(0, current - 1)), 1000)
+    if (!visible || endsAt === null) return
+    const updateRemaining = () => {
+      setSeconds(Math.max(0, Math.ceil((endsAt - Date.now()) / 1000)))
+    }
+    updateRemaining()
+    const timer = window.setInterval(updateRemaining, 500)
     return () => window.clearInterval(timer)
-  }, [visible, seconds])
+  }, [endsAt, visible])
   return {
     seconds,
     visible,
-    start: (nextSeconds: number) => { setSeconds(nextSeconds); setVisible(true) },
-    addThirty: () => setSeconds((current) => current + 30),
-    skip: () => { setSeconds(0); setVisible(false) },
+    start: (nextSeconds: number) => {
+      setSeconds(nextSeconds)
+      setEndsAt(Date.now() + nextSeconds * 1000)
+      setVisible(true)
+    },
+    addThirty: () => setEndsAt((current) => Math.max(current ?? 0, Date.now()) + 30_000),
+    skip: () => { setSeconds(0); setEndsAt(null); setVisible(false) },
   }
 }
 
@@ -526,7 +758,7 @@ function RestTimer({ seconds, addThirty, skip }: ReturnType<typeof useRestTimer>
       <div className="flex size-11 items-center justify-center rounded-xl bg-[#d8f96f] text-[#13251f]"><Clock3 size={20} /></div>
       <div className="min-w-0 flex-1">
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/50">组间休息</p>
-        <p className="font-display text-2xl font-semibold tabular-nums">{seconds > 0 ? formatClock(seconds) : '可以继续'}</p>
+        <p className={cn('font-display font-semibold tabular-nums', seconds > 0 ? 'text-2xl' : 'text-lg')}>{seconds > 0 ? formatClock(seconds) : '可以继续'}</p>
       </div>
       <Button type="button" variant="ghost" className="px-2 text-white hover:bg-white/10" onClick={addThirty}>+30s</Button>
       <button type="button" className="flex size-10 items-center justify-center rounded-xl bg-white/10 transition hover:bg-white/20" onClick={skip} aria-label="跳过休息"><SkipForward size={18} /></button>
@@ -562,27 +794,7 @@ function FitnessNoPlanPrompt() {
 }
 
 function FitnessPlanEmptyState() {
-  const savePlan = useSaveFitnessPlan()
-
-  const createPlan = () => {
-    savePlan.mutate({
-      trackedPersonId: null,
-      name: '我的训练计划',
-      description: null,
-      durationWeeks: 12,
-      startDate: null,
-      isActive: true,
-      days: WEEKDAYS.map((weekday, index) => ({
-        weekday: index + 1,
-        name: weekday,
-        focus: null,
-        isRest: true,
-        estimatedMinutes: null,
-        notes: null,
-        exercises: [],
-      })),
-    })
-  }
+  const [showCreatePlan, setShowCreatePlan] = useState(false)
 
   return (
     <FitnessShell
@@ -595,13 +807,99 @@ function FitnessPlanEmptyState() {
           <div className="flex size-12 items-center justify-center rounded-full bg-mint text-sage-dark"><CalendarDays size={22} /></div>
           <h2 className="mt-5 font-display text-2xl font-semibold text-ink">暂无训练计划</h2>
           <p className="mt-2 max-w-sm text-sm leading-6 text-sage">创建后会生成周一到周日七个空白日期，你可以把任意一天设为训练日并添加动作。</p>
-          <Button type="button" className="mt-6" onClick={createPlan} disabled={savePlan.isPending}>
-            {savePlan.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Plus size={16} />}
-            {savePlan.isPending ? '创建中' : '创建空白计划'}
+          <Button type="button" className="mt-6" onClick={() => setShowCreatePlan(true)}>
+            <Plus size={16} />
+            创建训练计划
           </Button>
         </div>
       </Panel>
+      {showCreatePlan ? <PlanCreateDialog onClose={() => setShowCreatePlan(false)} /> : null}
     </FitnessShell>
+  )
+}
+
+function PlanCreateDialog({
+  sourcePlan,
+  onClose,
+  onCreated,
+}: {
+  sourcePlan?: FitnessPlan
+  onClose: () => void
+  onCreated?: (plan: FitnessPlan) => void
+}) {
+  const savePlan = useSaveFitnessPlan()
+  const copyPlan = useCopyFitnessPlan()
+  const [mode, setMode] = useState<'blank' | 'copy'>(sourcePlan ? 'copy' : 'blank')
+  const [name, setName] = useState(sourcePlan ? `${sourcePlan.name} · 副本` : '我的训练计划')
+  const [durationWeeks, setDurationWeeks] = useState(sourcePlan?.durationWeeks ?? 12)
+  const isPending = savePlan.isPending || copyPlan.isPending
+
+  const changeMode = (nextMode: 'blank' | 'copy') => {
+    setMode(nextMode)
+    setName(nextMode === 'copy' && sourcePlan ? `${sourcePlan.name} · 副本` : '我的训练计划')
+    setDurationWeeks(sourcePlan?.durationWeeks ?? 12)
+  }
+
+  const createPlan = () => {
+    const trimmedName = name.trim()
+    if (!trimmedName) return
+    if (mode === 'copy' && sourcePlan) {
+      copyPlan.mutate(
+        { id: sourcePlan.id, name: trimmedName },
+        { onSuccess: (plan) => { onCreated?.(plan); onClose() } },
+      )
+      return
+    }
+    savePlan.mutate(
+      createBlankPlanInput(trimmedName, durationWeeks),
+      { onSuccess: (plan) => { onCreated?.(plan); onClose() } },
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#13251f]/45 p-4 backdrop-blur-sm sm:items-center" role="presentation" onMouseDown={onClose}>
+      <section className="w-full max-w-lg rounded-2xl border border-white/60 bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="create-plan-title" onMouseDown={(event) => event.stopPropagation()}>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sage-dark">New training plan</p>
+        <h2 id="create-plan-title" className="mt-2 font-display text-3xl font-semibold text-ink">新建训练计划</h2>
+        <p className="mt-2 text-sm leading-6 text-sage">选择从空白星期开始，或者复制当前计划后再调整。</p>
+
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          <button type="button" onClick={() => changeMode('blank')} className={cn('rounded-xl border p-3 text-left transition', mode === 'blank' ? 'border-sage-dark bg-mint/35' : 'border-line hover:border-sage')}>
+            <CalendarDays size={18} />
+            <span className="mt-2 block text-sm font-semibold text-ink">空白计划</span>
+            <span className="mt-1 block text-xs leading-5 text-sage">生成七个空白日期，完全自行安排。</span>
+          </button>
+          {sourcePlan ? (
+            <button type="button" onClick={() => changeMode('copy')} className={cn('rounded-xl border p-3 text-left transition', mode === 'copy' ? 'border-sage-dark bg-mint/35' : 'border-line hover:border-sage')}>
+              <Copy size={18} />
+              <span className="mt-2 block text-sm font-semibold text-ink">复制整份计划</span>
+              <span className="mt-1 block text-xs leading-5 text-sage">保留所有星期、动作和组次配置。</span>
+            </button>
+          ) : null}
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <div className={cn('space-y-2', mode === 'copy' ? 'sm:col-span-2' : '')}>
+            <Label>计划名称</Label>
+            <Input value={name} maxLength={120} onChange={(event) => setName(event.target.value)} disabled={isPending} />
+          </div>
+          {mode === 'blank' ? (
+            <div className="space-y-2">
+              <Label>计划周数</Label>
+              <Input type="number" min={1} max={104} value={durationWeeks} onChange={(event) => setDurationWeeks(Math.min(104, Math.max(1, Number(event.target.value) || 1)))} disabled={isPending} />
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <Button type="button" variant="secondary" onClick={onClose} disabled={isPending}>取消</Button>
+          <Button type="button" onClick={createPlan} disabled={isPending || !name.trim()}>
+            {isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Plus size={16} />}
+            {isPending ? '创建中' : mode === 'copy' ? '创建副本' : '创建计划'}
+          </Button>
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -623,15 +921,46 @@ function FitnessPlanEditor({
   onSelectPlan: (id: number) => void
 }) {
   const savePlan = useSaveFitnessPlan()
-  const copyPlan = useCopyFitnessPlan()
   const deletePlan = useDeleteFitnessPlan()
   const activatePlan = useActivateFitnessPlan()
   const [draft, setDraft] = useState<FitnessPlan>(() => structuredClone(activePlan))
   const [selectedWeekday, setSelectedWeekday] = useState(1)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showCreatePlan, setShowCreatePlan] = useState(false)
 
   const selectedDay = draft.days.find((day) => day.weekday === selectedWeekday)
   const activeExercises = data.exercises.filter((exercise) => exercise.isActive)
+  const isDirty = useMemo(
+    () => JSON.stringify(draft) !== JSON.stringify(activePlan),
+    [activePlan, draft],
+  )
+
+  useEffect(() => {
+    if (!isDirty) return
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    const handleLinkClick = (event: MouseEvent) => {
+      if (!(event.target instanceof Element)) return
+      const anchor = event.target.closest('a[href]')
+      if (!(anchor instanceof HTMLAnchorElement) || anchor.target === '_blank') return
+      const targetUrl = new URL(anchor.href, window.location.href)
+      if (targetUrl.origin !== window.location.origin || targetUrl.pathname === window.location.pathname) return
+      if (!window.confirm('这份计划还有未保存的修改，确定离开吗？')) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    document.addEventListener('click', handleLinkClick, true)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      document.removeEventListener('click', handleLinkClick, true)
+    }
+  }, [isDirty])
 
   const updateDay = (changes: Partial<FitnessPlanDay>) => {
     setDraft((current) =>
@@ -704,30 +1033,41 @@ function FitnessPlanEditor({
       title="训练计划编辑器"
       body="动作与星期安排分开维护。修改这里会影响后续训练，不会覆盖未来的历史训练快照。"
       action={
-        <Button
-          className="bg-[#d8f96f] text-[#18220f] hover:bg-white"
-          onClick={() => savePlan.mutate(draft)}
-          disabled={savePlan.isPending}
-        >
-          <Save size={16} />
-          {savePlan.isPending ? '保存中' : '保存计划'}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+          <span className={cn('inline-flex h-10 items-center gap-2 rounded-md px-3 text-xs font-semibold', isDirty ? 'bg-[#d8f96f]/15 text-[#d8f96f]' : 'bg-white/10 text-white/70')}>
+            {isDirty ? <span className="size-2 rounded-full bg-[#d8f96f]" /> : <Check size={14} />}
+            {isDirty ? '有未保存修改' : formatSavedTime(draft.updatedAt)}
+          </span>
+          {isDirty ? (
+            <Button type="button" variant="ghost" className="text-white hover:bg-white/10" onClick={() => setDraft(structuredClone(activePlan))} disabled={savePlan.isPending}>
+              放弃修改
+            </Button>
+          ) : null}
+          <Button
+            className="bg-[#d8f96f] text-[#18220f] hover:bg-white"
+            onClick={() => savePlan.mutate(draft, { onSuccess: (plan) => setDraft(structuredClone(plan)) })}
+            disabled={savePlan.isPending || !isDirty}
+          >
+            {savePlan.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Save size={16} />}
+            {savePlan.isPending ? '保存中' : isDirty ? '保存修改' : '已保存'}
+          </Button>
+        </div>
       }
     >
       <Panel className="p-3 sm:p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <Field label="计划版本">
-            <select value={selectedPlanId} onChange={(event) => onSelectPlan(Number(event.target.value))} className="fitness-select lg:min-w-64">
+            <select value={selectedPlanId} onChange={(event) => { const nextId = Number(event.target.value); if (!isDirty || window.confirm('当前修改尚未保存，确定切换计划吗？')) onSelectPlan(nextId) }} className="fitness-select lg:min-w-64">
               {data.plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}{plan.isActive ? '（当前）' : ''}</option>)}
             </select>
           </Field>
           <div className="flex flex-col gap-2 sm:flex-row lg:ml-auto">
-            <Button type="button" variant="secondary" onClick={() => copyPlan.mutate({ id: draft.id, name: `${draft.name} · 副本` }, { onSuccess: (plan) => onSelectPlan(plan.id) })} disabled={copyPlan.isPending}>{copyPlan.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Copy size={16} />}{copyPlan.isPending ? '复制中' : '复制整份计划'}</Button>
+            <Button type="button" variant="secondary" onClick={() => setShowCreatePlan(true)} disabled={isDirty} title={isDirty ? '请先保存或放弃当前修改' : '新建或复制训练计划'}><Plus size={16} />新建计划</Button>
             <Button type="button" variant="secondary" className="border-coral/30 text-coral hover:border-coral hover:bg-coral/5" onClick={() => setShowDeleteConfirm(true)} disabled={deletePlan.isPending}><Trash2 size={16} />删除计划</Button>
-            {!draft.isActive ? <Button type="button" onClick={() => activatePlan.mutate(draft.id)} disabled={activatePlan.isPending}>设为当前计划</Button> : <span className="inline-flex h-10 items-center justify-center rounded-md bg-mint px-4 text-sm font-semibold text-sage-dark">当前执行中</span>}
+            {!draft.isActive ? <Button type="button" onClick={() => activatePlan.mutate(draft.id)} disabled={activatePlan.isPending || isDirty} title={isDirty ? '请先保存或放弃当前修改' : undefined}>设为当前计划</Button> : <span className="inline-flex h-10 items-center justify-center rounded-md bg-mint px-4 text-sm font-semibold text-sage-dark">当前执行中</span>}
           </div>
         </div>
-        <p className="mt-3 text-xs leading-5 text-sage">复制会创建一份内容相同、可独立编辑的新计划；删除只移除计划模板，已经完成的训练历史仍会保留。</p>
+        <p className="mt-3 text-xs leading-5 text-sage">“新建计划”可以从空白开始，也可以复制当前计划；删除只移除计划模板，已经完成的训练历史仍会保留。</p>
       </Panel>
       <Panel className="p-3 sm:p-4">
         <div className="grid gap-3 md:grid-cols-[1fr_9rem_9rem]">
@@ -847,6 +1187,7 @@ function FitnessPlanEditor({
           </section>
         </div>
       ) : null}
+      {showCreatePlan ? <PlanCreateDialog sourcePlan={activePlan} onClose={() => setShowCreatePlan(false)} onCreated={(plan) => onSelectPlan(plan.id)} /> : null}
     </FitnessShell>
   )
 }

@@ -124,8 +124,14 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fitness-tab-progress {
+  .fitness-tab-progress,
+  .fitness-active-set::before,
+  .fitness-live-indicator span,
+  .fitness-celebration-burst span {
     animation: none;
+  }
+
+  .fitness-tab-progress {
     width: 100%;
   }
 }
@@ -133,6 +139,98 @@ button {
 .fitness-list-item {
   content-visibility: auto;
   contain-intrinsic-size: auto 180px;
+}
+
+.fitness-active-set::before {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 3px;
+  content: '';
+  background: #79a852;
+  box-shadow: 0 0 16px rgba(121, 168, 82, 0.65);
+  animation: fitness-active-glow 1.5s ease-in-out infinite;
+}
+
+.fitness-live-indicator {
+  display: inline-flex;
+  height: 0.875rem;
+  align-items: end;
+  gap: 2px;
+}
+
+.fitness-live-indicator span {
+  width: 2px;
+  border-radius: 999px;
+  background: #527e43;
+  animation: fitness-live-bar 800ms ease-in-out infinite alternate;
+}
+
+.fitness-live-indicator span:nth-child(1) { height: 45%; }
+.fitness-live-indicator span:nth-child(2) { height: 100%; animation-delay: 180ms; }
+.fitness-live-indicator span:nth-child(3) { height: 65%; animation-delay: 360ms; }
+
+.fitness-effort-range {
+  height: 0.5rem;
+  appearance: none;
+  border-radius: 999px;
+  outline: none;
+}
+
+.fitness-effort-range::-webkit-slider-thumb {
+  width: 1.25rem;
+  height: 1.25rem;
+  appearance: none;
+  border: 3px solid white;
+  border-radius: 999px;
+  background: #13251f;
+  box-shadow: 0 2px 8px rgba(19, 37, 31, 0.25);
+}
+
+.fitness-effort-range::-moz-range-thumb {
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 3px solid white;
+  border-radius: 999px;
+  background: #13251f;
+  box-shadow: 0 2px 8px rgba(19, 37, 31, 0.25);
+}
+
+.fitness-celebration-burst span {
+  --burst-angle: calc(var(--burst-index) * 30deg);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 18px;
+  border-radius: 999px;
+  background: #d8f96f;
+  opacity: 0;
+  transform: rotate(var(--burst-angle)) translateY(-55px);
+  animation: fitness-celebration 1.8s ease-out infinite;
+  animation-delay: calc(var(--burst-index) * 45ms);
+}
+
+@keyframes fitness-active-glow {
+  50% { opacity: 0.45; }
+}
+
+@keyframes fitness-live-bar {
+  to { height: 25%; opacity: 0.45; }
+}
+
+@keyframes fitness-celebration {
+  0% { opacity: 0; transform: rotate(var(--burst-angle)) translateY(-50px) scale(0.5); }
+  25% { opacity: 0.8; }
+  100% { opacity: 0; transform: rotate(var(--burst-angle)) translateY(-190px) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fitness-active-set::before,
+  .fitness-live-indicator span,
+  .fitness-celebration-burst span {
+    animation: none;
+  }
 }
 
 .no-scrollbar {

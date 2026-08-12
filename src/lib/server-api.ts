@@ -273,6 +273,13 @@ export async function saveServerFitnessSet(input: FitnessSetInput) {
   })
 }
 
+export async function addServerFitnessSet(exerciseId: number) {
+  return request<FitnessSession>('/api/fitness/session/exercise/set/add', {
+    method: 'POST',
+    body: JSON.stringify({ exerciseId }),
+  })
+}
+
 export async function finishServerFitnessSession(input: FitnessFeedbackInput) {
   return request<FitnessSession>('/api/fitness/session/finish', {
     method: 'POST',

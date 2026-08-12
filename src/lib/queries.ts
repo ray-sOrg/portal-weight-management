@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
+  addServerFitnessSet,
   addServerWeightEntry,
   activateServerFitnessPlan,
   archiveServerFitnessExercise,
@@ -185,6 +186,20 @@ export function useSaveFitnessSet() {
       })
       void queryClient.invalidateQueries({ queryKey: ['fitness-history'] })
       void queryClient.invalidateQueries({ queryKey: ['fitness-records'] })
+    },
+    onError: (error) => toast.error(error.message),
+  })
+}
+
+export function useAddFitnessSet() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (exerciseId: number) => addServerFitnessSet(exerciseId),
+    onSuccess: (session) => {
+      queryClient.setQueryData(['fitness-data'], (current: unknown) => {
+        if (!current || typeof current !== 'object') return current
+        return { ...current, todaySession: session }
+      })
     },
     onError: (error) => toast.error(error.message),
   })
