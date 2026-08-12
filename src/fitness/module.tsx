@@ -1027,6 +1027,12 @@ function FitnessPlanEditor({
     updateDay({ exercises: items })
   }
 
+  const saveDraft = () => {
+    savePlan.mutate(draft, {
+      onSuccess: (plan) => setDraft(structuredClone(plan)),
+    })
+  }
+
   return (
     <FitnessShell
       eyebrow="Plan builder"
@@ -1045,8 +1051,8 @@ function FitnessPlanEditor({
           ) : null}
           <Button
             className="bg-[#d8f96f] text-[#18220f] hover:bg-white"
-            onClick={() => savePlan.mutate(draft, { onSuccess: (plan) => setDraft(structuredClone(plan)) })}
-            disabled={savePlan.isPending || !isDirty}
+            onClick={saveDraft}
+            disabled={savePlan.isPending || !isDirty || !draft.name.trim()}
           >
             {savePlan.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Save size={16} />}
             {savePlan.isPending ? '保存中' : isDirty ? '保存修改' : '已保存'}
@@ -1070,10 +1076,10 @@ function FitnessPlanEditor({
         <p className="mt-3 text-xs leading-5 text-sage">“新建计划”可以从空白开始，也可以复制当前计划；删除只移除计划模板，已经完成的训练历史仍会保留。</p>
       </Panel>
       <Panel className="p-3 sm:p-4">
-        <div className="grid gap-3 md:grid-cols-[1fr_9rem_9rem]">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_9rem_9rem_auto] md:items-end">
           <div>
             <Label>计划名称</Label>
-            <Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+            <Input value={draft.name} maxLength={120} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
           </div>
           <div>
             <Label>计划周数</Label>
@@ -1093,7 +1099,19 @@ function FitnessPlanEditor({
               onChange={(event) => setDraft({ ...draft, startDate: event.target.value || null })}
             />
           </div>
+          <Button
+            type="button"
+            className="w-full md:w-auto"
+            onClick={saveDraft}
+            disabled={savePlan.isPending || !isDirty || !draft.name.trim()}
+          >
+            {savePlan.isPending ? <LoaderCircle className="animate-spin" size={16} /> : isDirty ? <Save size={16} /> : <Check size={16} />}
+            {savePlan.isPending ? '保存中' : isDirty ? '保存计划' : '已保存'}
+          </Button>
         </div>
+        <p className={cn('mt-3 text-xs leading-5', isDirty ? 'font-semibold text-sage-dark' : 'text-sage')} aria-live="polite">
+          {isDirty ? '计划信息已修改，点击“保存计划”后才会生效。' : formatSavedTime(draft.updatedAt)}
+        </p>
       </Panel>
 
       <div className="grid gap-4 lg:grid-cols-[14rem_1fr]">
