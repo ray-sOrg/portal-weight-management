@@ -31,7 +31,9 @@ type RequestOptions = {
   skipAuthRefresh?: boolean
 }
 
-const AUTH_ERROR_CODES = new Set([5002, 5003, 5004, 5005])
+const AUTH_ERROR_CODES = new Set([5001, 5002, 5003, 5004, 5005])
+const REFRESHABLE_AUTH_CODES = new Set([5001, 5003])
+let refreshRequest: Promise<void> | null = null
 
 export class ApiRequestError extends Error {
   constructor(
@@ -410,11 +412,14 @@ function parseServerTrackedPersonId(trackedPersonId: string) {
 
 async function request<T>(path: string, init: RequestInit = {}, options: RequestOptions = {}) {
   const payload = await sendRequest<T>(path, init)
-  if (payload.code === 5001 && !options.skipAuthRefresh) {
+  if (REFRESHABLE_AUTH_CODES.has(payload.code) && !options.skipAuthRefresh) {
     await refreshAccessToken()
     const retryPayload = await sendRequest<T>(path, init)
     if (retryPayload.code !== 200) {
-      throw new Error(normalizeApiMessage(retryPayload.message))
+      throw new ApiRequestError(
+        retryPayload.code,
+        normalizeApiMessage(retryPayload.message),
+      )
     }
     return retryPayload.data
   }
@@ -426,11 +431,16 @@ async function request<T>(path: string, init: RequestInit = {}, options: Request
 }
 
 async function refreshAccessToken() {
-  await request<Record<string, never>>(
-    '/api/auth/token/refresh',
-    { method: 'POST' },
-    { skipAuthRefresh: true },
-  )
+  if (!refreshRequest) {
+    refreshRequest = request<Record<string, never>>(
+      '/api/auth/token/refresh',
+      { method: 'POST' },
+      { skipAuthRefresh: true },
+    ).then(() => undefined).finally(() => {
+      refreshRequest = null
+    })
+  }
+  await refreshRequest
 }
 
 async function sendRequest<T>(path: string, init: RequestInit = {}) {
@@ -469,7 +479,9 @@ async function sendRequest<T>(path: string, init: RequestInit = {}) {
 function getCsrfToken(path: string, method = 'GET') {
   const normalizedMethod = method.toUpperCase()
   if (normalizedMethod === 'GET' || normalizedMethod === 'HEAD') return ''
-  if (path === '/api/auth/token/refresh') return getCookie('csrf_refresh_token')
+  if (path === '/api/auth/token/refresh' || path === '/api/auth/logout') {
+    return getCookie('csrf_refresh_token')
+  }
   if (path.startsWith('/api/auth/')) return ''
   return getCookie('csrf_access_token')
 }
