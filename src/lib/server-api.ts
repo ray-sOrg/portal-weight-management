@@ -29,6 +29,7 @@ type ApiResponse<T> = {
 
 type RequestOptions = {
   skipAuthRefresh?: boolean
+  timeoutMs?: number
 }
 
 const AUTH_ERROR_CODES = new Set([5001, 5002, 5003, 5004, 5005])
@@ -230,7 +231,7 @@ export async function saveServerFitnessPlan(input: FitnessPlanInput) {
   return request<FitnessPlan>('/api/fitness/plan/save', {
     method: 'POST',
     body: JSON.stringify(input),
-  })
+  }, { timeoutMs: 30_000 })
 }
 
 export async function activateServerFitnessPlan(id: number) {
@@ -411,10 +412,10 @@ function parseServerTrackedPersonId(trackedPersonId: string) {
 }
 
 async function request<T>(path: string, init: RequestInit = {}, options: RequestOptions = {}) {
-  const payload = await sendRequest<T>(path, init)
+  const payload = await sendRequest<T>(path, init, options.timeoutMs)
   if (REFRESHABLE_AUTH_CODES.has(payload.code) && !options.skipAuthRefresh) {
     await refreshAccessToken()
-    const retryPayload = await sendRequest<T>(path, init)
+    const retryPayload = await sendRequest<T>(path, init, options.timeoutMs)
     if (retryPayload.code !== 200) {
       throw new ApiRequestError(
         retryPayload.code,
@@ -443,9 +444,9 @@ async function refreshAccessToken() {
   await refreshRequest
 }
 
-async function sendRequest<T>(path: string, init: RequestInit = {}) {
+async function sendRequest<T>(path: string, init: RequestInit = {}, timeoutMs = 8_000) {
   const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), 8_000)
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
   const csrfToken = getCsrfToken(path, init.method)
 
   let response: Response

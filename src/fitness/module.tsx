@@ -1038,27 +1038,6 @@ function FitnessPlanEditor({
       eyebrow="Plan builder"
       title="训练计划编辑器"
       body="动作与星期安排分开维护。修改这里会影响后续训练，不会覆盖未来的历史训练快照。"
-      action={
-        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-          <span className={cn('inline-flex h-10 items-center gap-2 rounded-md px-3 text-xs font-semibold', isDirty ? 'bg-[#d8f96f]/15 text-[#d8f96f]' : 'bg-white/10 text-white/70')}>
-            {isDirty ? <span className="size-2 rounded-full bg-[#d8f96f]" /> : <Check size={14} />}
-            {isDirty ? '有未保存修改' : formatSavedTime(draft.updatedAt)}
-          </span>
-          {isDirty ? (
-            <Button type="button" variant="ghost" className="text-white hover:bg-white/10" onClick={() => setDraft(structuredClone(activePlan))} disabled={savePlan.isPending}>
-              放弃修改
-            </Button>
-          ) : null}
-          <Button
-            className="bg-[#d8f96f] text-[#18220f] hover:bg-white"
-            onClick={saveDraft}
-            disabled={savePlan.isPending || !isDirty || !draft.name.trim()}
-          >
-            {savePlan.isPending ? <LoaderCircle className="animate-spin" size={16} /> : <Save size={16} />}
-            {savePlan.isPending ? '保存中' : isDirty ? '保存修改' : '已保存'}
-          </Button>
-        </div>
-      }
     >
       <Panel className="p-3 sm:p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
