@@ -150,6 +150,20 @@ function exerciseUsesExternalWeight(exercise: FitnessSessionExercise) {
   return ['杠铃', '哑铃', '壶铃', '臂力棒'].some((item) => equipment.includes(item))
 }
 
+function weightInputLabel(exercise: FitnessSessionExercise) {
+  const equipment = exercise.equipment ?? ''
+  if (equipment.includes('哑铃')) return '单只重量 kg'
+  if (equipment.includes('杠铃')) return '总重量 kg'
+  return '重量 kg'
+}
+
+function weightRuleHint(exercise: FitnessSessionExercise) {
+  const equipment = exercise.equipment ?? ''
+  if (equipment.includes('哑铃')) return '哑铃记录单只重量'
+  if (equipment.includes('杠铃')) return '杠铃记录含杆总重量'
+  return undefined
+}
+
 function FitnessShell({
   eyebrow,
   title,
@@ -549,7 +563,7 @@ function WorkoutExerciseCard({
         </button>
       </div>
       <div className="divide-y divide-line">
-        {exercise.sets.map((fitnessSet) => (
+        {exercise.sets.map((fitnessSet, setIndex) => (
           <WorkoutSetRow
             key={`${fitnessSet.id}-${fitnessSet.updatedAt}`}
             fitnessSet={fitnessSet}
@@ -557,6 +571,7 @@ function WorkoutExerciseCard({
             previousSet={previousSetByNumber.get(fitnessSet.setNumber)}
             pending={savingSetId === fitnessSet.id}
             active={activeSetId === fitnessSet.id}
+            locked={!fitnessSet.completed && setIndex > 0 && !exercise.sets[setIndex - 1]?.completed}
             onSave={onSave}
           />
         ))}
@@ -574,18 +589,45 @@ function WorkoutExerciseCard({
   </>
 }
 
-function WorkoutSetRow({ fitnessSet, exercise, previousSet, pending, active, onSave }: {
+function WorkoutSetRow({ fitnessSet, exercise, previousSet, pending, active, locked, onSave }: {
   fitnessSet: FitnessSet
   exercise: FitnessSessionExercise
   previousSet?: FitnessSet
   pending: boolean
   active: boolean
+  locked: boolean
   onSave: (input: Parameters<ReturnType<typeof useSaveFitnessSet>['mutate']>[0], restSeconds: number | null) => void
 }) {
   const [reps, setReps] = useState(() => String(fitnessSet.completed ? fitnessSet.actualReps ?? '' : fitnessSet.actualReps ?? previousSet?.actualReps ?? exercise.repsMin ?? ''))
   const [duration, setDuration] = useState(() => String(fitnessSet.completed ? fitnessSet.actualDurationSeconds ?? '' : fitnessSet.actualDurationSeconds ?? previousSet?.actualDurationSeconds ?? exercise.durationSecondsMin ?? ''))
   const [weight, setWeight] = useState(() => String(fitnessSet.completed ? fitnessSet.actualWeightKg ?? '' : fitnessSet.actualWeightKg ?? previousSet?.actualWeightKg ?? exercise.targetWeightKg ?? ''))
-  const [rir, setRir] = useState(() => String(fitnessSet.completed ? fitnessSet.rir ?? '' : fitnessSet.rir ?? previousSet?.rir ?? exercise.rirMin ?? ''))
+  const [rir, setRir] = useState(() => String(fitnessSet.rir ?? ''))
+  const [timerStartedAt, setTimerStartedAt] = useState<number | null>(null)
+  const [timerBaseSeconds, setTimerBaseSeconds] = useState(() => nullableNumber(duration) ?? 0)
+  useEffect(() => {
+    if (timerStartedAt === null) return
+    const updateDuration = () => {
+      setDuration(String(timerBaseSeconds + Math.floor((Date.now() - timerStartedAt) / 1000)))
+    }
+    updateDuration()
+    const timer = window.setInterval(updateDuration, 250)
+    return () => window.clearInterval(timer)
+  }, [timerBaseSeconds, timerStartedAt])
+
+  const toggleDurationTimer = () => {
+    if (timerStartedAt === null) {
+      setTimerBaseSeconds(nullableNumber(duration) ?? 0)
+      setTimerStartedAt(Date.now())
+      return
+    }
+    setTimerBaseSeconds(nullableNumber(duration) ?? timerBaseSeconds)
+    setTimerStartedAt(null)
+  }
+  const resetDurationTimer = () => {
+    setTimerStartedAt(null)
+    setTimerBaseSeconds(0)
+    setDuration('0')
+  }
   const toggleSet = () => onSave({
     id: fitnessSet.id,
     actualReps: exercise.metricType === 'reps' ? nullableNumber(reps) : null,
@@ -596,30 +638,42 @@ function WorkoutSetRow({ fitnessSet, exercise, previousSet, pending, active, onS
   }, exercise.restSeconds)
 
   return (
-    <div className={cn('relative grid gap-3 px-4 py-3 transition sm:grid-cols-[3rem_1fr_auto] sm:items-end', fitnessSet.completed && 'bg-mint/20', active && 'fitness-active-set bg-[#f2f9e4]')}>
+    <div className={cn('relative grid gap-3 px-4 py-3 transition sm:grid-cols-[3rem_1fr_auto] sm:items-end', fitnessSet.completed && 'bg-mint/20', active && 'fitness-active-set bg-[#f2f9e4]', locked && 'bg-slate-50/70 opacity-55')}>
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-wide text-sage">组</p>
         <div className="mt-1 flex items-center gap-2">
           <p className="font-semibold tabular-nums">{fitnessSet.setNumber}</p>
           {active ? <span className="fitness-live-indicator" aria-label="当前正在进行"><span /><span /><span /></span> : null}
         </div>
-        {previousSet && !fitnessSet.completed ? <p className="mt-1 text-[9px] font-semibold text-sage-dark">沿用上次</p> : null}
+        {locked ? <p className="mt-1 text-[9px] font-semibold text-sage">等待上一组</p> : null}
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {exercise.metricType === 'reps' ? <CompactInput label="次数" value={reps} onChange={setReps} /> : null}
-        {exercise.metricType === 'duration' ? <CompactInput label="秒" value={duration} onChange={setDuration} /> : null}
-        {exerciseUsesExternalWeight(exercise) ? <CompactInput label="重量 kg" value={weight} onChange={setWeight} step="0.5" /> : null}
-        {exercise.rirMin !== null ? <CompactInput label="RIR" value={rir} onChange={setRir} /> : null}
+        {exercise.metricType === 'reps' ? <CompactInput label="次数" value={reps} onChange={setReps} disabled={locked} hint={previousSet?.actualReps != null ? `上次 ${previousSet.actualReps} 次` : undefined} /> : null}
+        {exercise.metricType === 'duration' ? (
+          <div>
+            <CompactInput label="秒" value={duration} onChange={setDuration} disabled={locked} hint={previousSet?.actualDurationSeconds != null ? `上次 ${previousSet.actualDurationSeconds} 秒` : undefined} />
+            <div className="mt-1.5 flex gap-1.5">
+              <button type="button" onClick={toggleDurationTimer} disabled={locked || fitnessSet.completed} className="inline-flex h-7 items-center gap-1 rounded-md bg-[#13251f] px-2 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">
+                {timerStartedAt === null ? <Play size={11} /> : <Pause size={11} />}{timerStartedAt === null ? '开始计时' : '暂停计时'}
+              </button>
+              {(nullableNumber(duration) ?? 0) > 0 ? <button type="button" onClick={resetDurationTimer} disabled={locked || fitnessSet.completed} className="h-7 rounded-md bg-mist px-2 text-[10px] font-semibold text-sage-dark disabled:opacity-40">归零</button> : null}
+            </div>
+          </div>
+        ) : null}
+        {exerciseUsesExternalWeight(exercise) ? <CompactInput label={weightInputLabel(exercise)} value={weight} onChange={setWeight} step="0.5" disabled={locked} hint={previousSet?.actualWeightKg != null ? `上次 ${previousSet.actualWeightKg} kg` : weightRuleHint(exercise)} /> : null}
+        {exercise.rirMin !== null ? <CompactInput label="RIR（可选）" value={rir} onChange={setRir} disabled={locked} placeholder="不必填" hint="还能再做几次；0=力竭，2=还能做2次" /> : null}
       </div>
       <Button
         type="button"
         variant={fitnessSet.completed ? 'secondary' : 'primary'}
         className="w-full sm:w-24"
         onClick={toggleSet}
-        disabled={pending}
+        disabled={pending || locked}
       >
         {pending
           ? <><LoaderCircle className="animate-spin" size={16} />处理中</>
+          : locked
+            ? <><Clock3 size={16} />待解锁</>
           : fitnessSet.completed
             ? <><Pause size={16} />撤销完成</>
             : <><Check size={16} />完成</>}
@@ -642,7 +696,7 @@ function ExerciseDetailDialog({ exercise, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#0e1f19]/55 p-3 backdrop-blur-sm sm:items-center" role="presentation" onMouseDown={onClose}>
-      <section className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-[1.5rem] border border-white/60 bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby={`exercise-detail-${exercise.id}`} onMouseDown={(event) => event.stopPropagation()}>
+      <section className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-[1.5rem] bg-white shadow-[0_32px_90px_rgba(9,23,18,0.35)] ring-1 ring-black/10" role="dialog" aria-modal="true" aria-labelledby={`exercise-detail-${exercise.id}`} onMouseDown={(event) => event.stopPropagation()}>
         <div className="relative overflow-hidden bg-[#13251f] p-5 text-white sm:p-6">
           <div className="absolute -right-10 -top-10 size-36 rounded-full border border-[#d8f96f]/25" />
           <button type="button" onClick={onClose} className="absolute right-4 top-4 z-10 flex size-9 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20" aria-label="关闭动作详解"><X size={18} /></button>
@@ -729,11 +783,12 @@ function DetailSection({ number, title, body, tone = 'default' }: {
   )
 }
 
-function CompactInput({ label, value, onChange, step = '1' }: { label: string; value: string; onChange: (value: string) => void; step?: string }) {
+function CompactInput({ label, value, onChange, step = '1', disabled = false, hint, placeholder }: { label: string; value: string; onChange: (value: string) => void; step?: string; disabled?: boolean; hint?: string; placeholder?: string }) {
   return (
     <label>
       <span className="text-[10px] font-semibold uppercase tracking-wide text-sage">{label}</span>
-      <Input type="number" inputMode="decimal" min="0" step={step} value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 h-9" />
+      <Input type="number" inputMode="decimal" min="0" step={step} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} placeholder={placeholder} className="mt-1 h-9" />
+      {hint ? <span className="mt-1 block text-[9px] leading-4 text-sage">{hint}</span> : null}
     </label>
   )
 }
@@ -1445,7 +1500,7 @@ function ExerciseEditorDialog({ form, media, saving, archiving, onChange, onClos
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#0e1f19]/60 sm:items-center sm:p-4" role="presentation" onMouseDown={onClose}>
       <section
-        className="flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-[1.75rem] border border-white/60 bg-white shadow-2xl sm:max-w-3xl sm:rounded-[1.75rem]"
+        className="flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-[1.75rem] bg-white shadow-[0_32px_100px_rgba(9,23,18,0.4)] ring-1 ring-black/10 sm:max-w-3xl sm:rounded-[1.75rem]"
         role="dialog"
         aria-modal="true"
         aria-labelledby="exercise-editor-title"
