@@ -1316,6 +1316,7 @@ export function FitnessExercisesPage() {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState<'all' | FitnessExerciseCategory>('all')
   const [form, setForm] = useState<FitnessExerciseInput>(EMPTY_EXERCISE)
+  const [editorOpen, setEditorOpen] = useState(false)
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase()
@@ -1329,12 +1330,22 @@ export function FitnessExercisesPage() {
   if (isLoading) return <FitnessLoading />
   if (error) return <FitnessError message={error.message} />
 
-  const selectExercise = (exercise: FitnessExercise) => setForm({ ...exercise })
+  const selectExercise = (exercise: FitnessExercise) => {
+    setForm({ ...exercise })
+    setEditorOpen(true)
+  }
+  const createExercise = () => {
+    setForm({ ...EMPTY_EXERCISE })
+    setEditorOpen(true)
+  }
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
     if (!form.name.trim()) return
     saveExercise.mutate(form, {
-      onSuccess: (saved) => setForm({ ...saved }),
+      onSuccess: (saved) => {
+        setForm({ ...saved })
+        setEditorOpen(false)
+      },
     })
   }
 
@@ -1344,13 +1355,13 @@ export function FitnessExercisesPage() {
       title="动作库"
       body="动作名称、器械、注意事项和进阶方式只维护一次，所有训练计划都可以复用。"
       action={
-        <Button className="bg-[#d8f96f] text-[#18220f] hover:bg-white" onClick={() => setForm({ ...EMPTY_EXERCISE })}>
+        <Button className="bg-[#d8f96f] text-[#18220f] hover:bg-white" onClick={createExercise}>
           <Plus size={16} />新增动作
         </Button>
       }
     >
-      <div className="grid gap-4 lg:grid-cols-[minmax(18rem,.8fr)_minmax(25rem,1.2fr)]">
-        <Panel className="p-3">
+      <div className="grid gap-4">
+        <Panel className="p-3 sm:p-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-sage" size={16} />
             <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索动作、部位或器械" />
@@ -1361,7 +1372,7 @@ export function FitnessExercisesPage() {
               <FilterButton key={key} active={category === key} onClick={() => setCategory(key)}>{CATEGORY_LABELS[key]}</FilterButton>
             ))}
           </div>
-          <div className="mt-3 max-h-[42rem] space-y-2 overflow-y-auto pr-1">
+          <div className="mt-3 grid max-h-[42rem] gap-2 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
             {filtered.map((exercise) => (
               <button
                 type="button"
@@ -1369,7 +1380,7 @@ export function FitnessExercisesPage() {
                 onClick={() => selectExercise(exercise)}
                 className={cn(
                   'w-full rounded-xl border p-3 text-left transition hover:border-sage',
-                  form.id === exercise.id ? 'border-[#13251f] bg-[#13251f] text-white' : 'border-line bg-white',
+                  form.id === exercise.id && editorOpen ? 'border-[#13251f] bg-[#13251f] text-white' : 'border-line bg-white',
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -1377,7 +1388,7 @@ export function FitnessExercisesPage() {
                     <p className="font-semibold">{exercise.name}</p>
                     <p className="mt-1 text-xs opacity-60">{exercise.primaryMuscle || '未分类'} · {exercise.equipment || '无器械'}</p>
                   </div>
-                  <span className={cn('rounded-full px-2 py-1 text-[10px] font-semibold', form.id === exercise.id ? 'bg-white/10' : 'bg-mint/35 text-sage-dark')}>
+                  <span className={cn('rounded-full px-2 py-1 text-[10px] font-semibold', form.id === exercise.id && editorOpen ? 'bg-white/10' : 'bg-mint/35 text-sage-dark')}>
                     {CATEGORY_LABELS[exercise.category]}
                   </span>
                 </div>
@@ -1386,55 +1397,109 @@ export function FitnessExercisesPage() {
           </div>
         </Panel>
 
-        <Panel>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="flex items-center justify-between gap-3 border-b border-line pb-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sage-dark">{form.id ? '编辑动作' : '新动作'}</p>
-                <h2 className="mt-1 font-display text-2xl font-semibold">{form.name || '填写动作资料'}</h2>
-              </div>
-              <Settings2 className="text-sage" size={22} />
+      </div>
+      {editorOpen ? (
+        <ExerciseEditorDialog
+          form={form}
+          media={data?.exercises.find((exercise) => exercise.id === form.id)?.media ?? null}
+          saving={saveExercise.isPending}
+          archiving={archiveExercise.isPending}
+          onChange={setForm}
+          onClose={() => setEditorOpen(false)}
+          onSubmit={handleSubmit}
+          onArchive={() => archiveExercise.mutate(form.id!, {
+            onSuccess: () => {
+              setForm({ ...EMPTY_EXERCISE })
+              setEditorOpen(false)
+            },
+          })}
+        />
+      ) : null}
+    </FitnessShell>
+  )
+}
+
+function ExerciseEditorDialog({ form, media, saving, archiving, onChange, onClose, onSubmit, onArchive }: {
+  form: FitnessExerciseInput
+  media: FitnessExerciseMedia | null
+  saving: boolean
+  archiving: boolean
+  onChange: (value: FitnessExerciseInput) => void
+  onClose: () => void
+  onSubmit: (event: FormEvent) => void
+  onArchive: () => void
+}) {
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.body.style.overflow = 'hidden'
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = originalOverflow
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#0e1f19]/60 sm:items-center sm:p-4" role="presentation" onMouseDown={onClose}>
+      <section
+        className="flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-[1.75rem] border border-white/60 bg-white shadow-2xl sm:max-w-3xl sm:rounded-[1.75rem]"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="exercise-editor-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="relative shrink-0 overflow-hidden bg-[#13251f] px-5 py-5 text-white sm:px-6">
+          <div className="absolute -right-8 -top-12 size-36 rounded-full border border-[#d8f96f]/25" />
+          <div className="relative flex items-start justify-between gap-4">
+            <div>
+              <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#d8f96f]"><Settings2 size={13} />Exercise profile</p>
+              <h2 id="exercise-editor-title" className="mt-1.5 font-display text-2xl font-semibold sm:text-3xl">{form.id ? form.name : '新增动作'}</h2>
+              <p className="mt-1 text-xs text-white/55">{form.id ? '查看示例并维护动作资料' : '创建一个可以在训练计划中复用的动作'}</p>
             </div>
+            <button type="button" onClick={onClose} className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20" aria-label="关闭动作弹窗"><X size={18} /></button>
+          </div>
+        </header>
+
+        <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5 sm:p-6">
+            {form.id ? <ExerciseMediaGallery name={form.name} media={media} /> : null}
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="动作名称"><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></Field>
-              <Field label="主要部位"><Input value={form.primaryMuscle ?? ''} onChange={(event) => setForm({ ...form, primaryMuscle: event.target.value })} placeholder="例如 胸 / 三头" /></Field>
+              <Field label="动作名称"><Input value={form.name} onChange={(event) => onChange({ ...form, name: event.target.value })} required autoFocus={!form.id} /></Field>
+              <Field label="主要部位"><Input value={form.primaryMuscle ?? ''} onChange={(event) => onChange({ ...form, primaryMuscle: event.target.value })} placeholder="例如 胸 / 三头" /></Field>
               <Field label="动作类型">
-                <select className="fitness-select" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as FitnessExerciseCategory })}>
+                <select className="fitness-select" value={form.category} onChange={(event) => onChange({ ...form, category: event.target.value as FitnessExerciseCategory })}>
                   {(Object.keys(CATEGORY_LABELS) as FitnessExerciseCategory[]).map((key) => <option key={key} value={key}>{CATEGORY_LABELS[key]}</option>)}
                 </select>
               </Field>
               <Field label="记录方式">
-                <select className="fitness-select" value={form.metricType} onChange={(event) => setForm({ ...form, metricType: event.target.value as FitnessMetricType })}>
+                <select className="fitness-select" value={form.metricType} onChange={(event) => onChange({ ...form, metricType: event.target.value as FitnessMetricType })}>
                   {(Object.keys(METRIC_LABELS) as FitnessMetricType[]).map((key) => <option key={key} value={key}>{METRIC_LABELS[key]}</option>)}
                 </select>
               </Field>
-              <Field label="器械"><Input value={form.equipment ?? ''} onChange={(event) => setForm({ ...form, equipment: event.target.value })} /></Field>
-              <Field label="辅助部位"><Input value={form.secondaryMuscles ?? ''} onChange={(event) => setForm({ ...form, secondaryMuscles: event.target.value })} /></Field>
+              <Field label="器械"><Input value={form.equipment ?? ''} onChange={(event) => onChange({ ...form, equipment: event.target.value })} /></Field>
+              <Field label="辅助部位"><Input value={form.secondaryMuscles ?? ''} onChange={(event) => onChange({ ...form, secondaryMuscles: event.target.value })} /></Field>
             </div>
-            {form.id ? <ExerciseMediaGallery name={form.name} media={data?.exercises.find((exercise) => exercise.id === form.id)?.media ?? null} /> : null}
-            <TextAreaField label="动作要点" value={form.instructions ?? ''} onChange={(value) => setForm({ ...form, instructions: value })} />
-            <TextAreaField label="注意事项" value={form.cautions ?? ''} onChange={(value) => setForm({ ...form, cautions: value })} />
-            <TextAreaField label="进阶规则" value={form.progressionNotes ?? ''} onChange={(value) => setForm({ ...form, progressionNotes: value })} />
-            <div className="flex flex-col-reverse gap-2 border-t border-line pt-4 sm:flex-row sm:justify-between">
-              {form.id ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="text-coral"
-                  onClick={() => archiveExercise.mutate(form.id!, { onSuccess: () => setForm({ ...EMPTY_EXERCISE }) })}
-                  disabled={archiveExercise.isPending}
-                >
-                  <Trash2 size={16} />停用动作
-                </Button>
-              ) : <span />}
-              <Button type="submit" disabled={saveExercise.isPending || !form.name.trim()}>
-                <Save size={16} />{saveExercise.isPending ? '保存中' : '保存动作'}
+            <TextAreaField label="动作要点" value={form.instructions ?? ''} onChange={(value) => onChange({ ...form, instructions: value })} />
+            <TextAreaField label="注意事项" value={form.cautions ?? ''} onChange={(value) => onChange({ ...form, cautions: value })} />
+            <TextAreaField label="进阶规则" value={form.progressionNotes ?? ''} onChange={(value) => onChange({ ...form, progressionNotes: value })} />
+          </div>
+
+          <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-line bg-white/95 p-4 backdrop-blur sm:px-6">
+            {form.id ? (
+              <Button type="button" variant="ghost" className="text-coral" onClick={onArchive} disabled={archiving}>
+                <Trash2 size={16} />{archiving ? '处理中' : '停用动作'}
               </Button>
-            </div>
-          </form>
-        </Panel>
-      </div>
-    </FitnessShell>
+            ) : <span />}
+            <Button type="submit" disabled={saving || !form.name.trim()}>
+              <Save size={16} />{saving ? '保存中' : '保存动作'}
+            </Button>
+          </footer>
+        </form>
+      </section>
+    </div>
   )
 }
 
