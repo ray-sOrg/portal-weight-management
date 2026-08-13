@@ -94,6 +94,16 @@ export type FitnessExerciseCategory =
 
 export type FitnessMetricType = 'reps' | 'duration' | 'distance' | 'check'
 
+export type FitnessExerciseMedia = {
+  matchType: 'exact' | 'related' | 'informational'
+  note: string | null
+  images: Array<{
+    position: 'start' | 'finish' | 'overview'
+    url: string
+  }>
+  manifestUrl: string
+}
+
 export type FitnessExercise = {
   id: number
   name: string
@@ -105,6 +115,7 @@ export type FitnessExercise = {
   instructions: string | null
   cautions: string | null
   progressionNotes: string | null
+  media: FitnessExerciseMedia | null
   isActive: boolean
   createdAt: string | null
   updatedAt: string | null
@@ -183,6 +194,7 @@ export type FitnessSessionExercise = {
   metricType: FitnessMetricType
   instructions: string | null
   cautions: string | null
+  media: FitnessExerciseMedia | null
   targetSets: number | null
   repsMin: number | null
   repsMax: number | null
@@ -292,7 +304,7 @@ export type FitnessBootstrap = {
 
 export type FitnessExerciseInput = Omit<
   FitnessExercise,
-  'id' | 'createdAt' | 'updatedAt'
+  'id' | 'createdAt' | 'updatedAt' | 'media'
 > & { id?: number }
 
 export type FitnessPlanInput = Omit<

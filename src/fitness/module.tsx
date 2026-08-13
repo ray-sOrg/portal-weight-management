@@ -51,6 +51,7 @@ import {
 } from '@/lib/queries'
 import type {
   FitnessExercise,
+  FitnessExerciseMedia,
   FitnessBootstrap,
   FitnessExerciseCategory,
   FitnessExerciseInput,
@@ -645,7 +646,7 @@ function ExerciseDetailDialog({ exercise, onClose }: {
         <div className="relative overflow-hidden bg-[#13251f] p-5 text-white sm:p-6">
           <div className="absolute -right-10 -top-10 size-36 rounded-full border border-[#d8f96f]/25" />
           <button type="button" onClick={onClose} className="absolute right-4 top-4 z-10 flex size-9 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20" aria-label="关闭动作详解"><X size={18} /></button>
-          <div className="relative grid gap-5 sm:grid-cols-[1fr_11rem] sm:items-center">
+          <div className="relative">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#d8f96f]">Movement guide</p>
               <h2 id={`exercise-detail-${exercise.id}`} className="mt-2 font-display text-3xl font-semibold">{exercise.exerciseName}</h2>
@@ -655,10 +656,10 @@ function ExerciseDetailDialog({ exercise, onClose }: {
                 {exercise.equipment ? <span className="rounded-full bg-white/10 px-2.5 py-1">{exercise.equipment}</span> : null}
               </div>
             </div>
-            <ExerciseIllustration exercise={exercise} />
           </div>
         </div>
         <div className="grid gap-4 p-5 sm:p-6">
+          <ExerciseMediaGallery name={exercise.exerciseName} media={exercise.media} />
           <DetailSection number="01" title="动作要领" body={exercise.instructions || '保持动作稳定，在自己可控的活动范围内完成。'} />
           <DetailSection number="02" title="本次训练提示" body={exercise.planNotes || `完成 ${formatSessionExerciseTarget(exercise)}。`} />
           <DetailSection number="03" title="安全注意" body={exercise.cautions || '出现锐痛或关节不适时立即停止，不要为了完成次数牺牲动作质量。'} tone="warning" />
@@ -669,36 +670,47 @@ function ExerciseDetailDialog({ exercise, onClose }: {
   )
 }
 
-function ExerciseIllustration({ exercise }: { exercise: FitnessSessionExercise }) {
-  const isLowerBody = exercise.primaryMuscle?.includes('腿') || exercise.primaryMuscle?.includes('后链') || exercise.primaryMuscle?.includes('臀')
+function ExerciseMediaGallery({ name, media }: { name: string; media: FitnessExerciseMedia | null }) {
+  const [failedUrls, setFailedUrls] = useState<Set<string>>(() => new Set())
+  const images = media?.images.filter((image) => !failedUrls.has(image.url)) ?? []
+
+  if (images.length) {
+    return (
+      <section aria-label={`${name}动作示例`}>
+        <div className="mb-2.5 flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-ink">动作示例</h3>
+          <span className={cn(
+            'rounded-full px-2.5 py-1 text-[10px] font-semibold',
+            media?.matchType === 'exact' ? 'bg-mint text-sage-dark' : 'bg-amber-100 text-amber-800',
+          )}>
+            {media?.matchType === 'exact' ? '标准示意' : media?.matchType === 'informational' ? '任务说明' : '相关示意'}
+          </span>
+        </div>
+        <div className={cn('grid gap-2.5', images.length > 1 && 'grid-cols-2')}>
+          {images.map((image) => (
+            <figure key={image.url} className="overflow-hidden rounded-xl border border-line bg-white">
+              <img
+                src={image.url}
+                alt={`${name}${image.position === 'start' ? '起始姿势' : image.position === 'finish' ? '结束姿势' : '示意图'}`}
+                className="aspect-[4/3] w-full object-contain"
+                loading="lazy"
+                decoding="async"
+                onError={() => setFailedUrls((current) => new Set(current).add(image.url))}
+              />
+              <figcaption className="border-t border-line bg-mist/60 px-2 py-1.5 text-center text-[10px] font-semibold text-sage">
+                {image.position === 'start' ? '起始' : image.position === 'finish' ? '结束' : '说明'}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+        {media?.note ? <p className="mt-2 text-xs leading-5 text-sage">{media.note}</p> : null}
+      </section>
+    )
+  }
+
   return (
-    <div className="relative mx-auto flex aspect-square w-36 items-center justify-center overflow-hidden rounded-[1.3rem] border border-white/10 bg-white/5">
-      <div className="absolute inset-x-5 bottom-5 h-px bg-white/15" />
-      <svg viewBox="0 0 160 160" className="size-full" role="img" aria-label={`${exercise.exerciseName}动作示意`}>
-        <circle cx="80" cy="42" r="13" fill="#d8f96f" />
-        <g fill="none" stroke="#f4f8f5" strokeLinecap="round" strokeLinejoin="round" strokeWidth="8">
-          {isLowerBody ? (
-            <>
-              <path d="M79 58 L72 91 L101 105" />
-              <path d="M73 90 L49 112 L38 137" />
-              <path d="M101 105 L119 137" />
-              <path d="M75 67 L47 83" />
-              <path d="M75 67 L108 82" />
-              <path d="M37 77 L116 77" stroke="#d8f96f" strokeWidth="5" />
-            </>
-          ) : (
-            <>
-              <path d="M80 58 L80 104" />
-              <path d="M80 70 L46 91" />
-              <path d="M80 70 L114 91" />
-              <path d="M80 103 L58 137" />
-              <path d="M80 103 L102 137" />
-              <path d="M36 91 L124 91" stroke="#d8f96f" strokeWidth="5" />
-            </>
-          )}
-        </g>
-      </svg>
-      <span className="absolute bottom-2 right-2 rounded-full bg-[#d8f96f] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#13251f]">示意</span>
+    <div className="rounded-xl border border-dashed border-line bg-mist/60 px-4 py-6 text-center text-sm text-sage">
+      暂无动作图片
     </div>
   )
 }
@@ -1399,6 +1411,7 @@ export function FitnessExercisesPage() {
               <Field label="器械"><Input value={form.equipment ?? ''} onChange={(event) => setForm({ ...form, equipment: event.target.value })} /></Field>
               <Field label="辅助部位"><Input value={form.secondaryMuscles ?? ''} onChange={(event) => setForm({ ...form, secondaryMuscles: event.target.value })} /></Field>
             </div>
+            {form.id ? <ExerciseMediaGallery name={form.name} media={data?.exercises.find((exercise) => exercise.id === form.id)?.media ?? null} /> : null}
             <TextAreaField label="动作要点" value={form.instructions ?? ''} onChange={(value) => setForm({ ...form, instructions: value })} />
             <TextAreaField label="注意事项" value={form.cautions ?? ''} onChange={(value) => setForm({ ...form, cautions: value })} />
             <TextAreaField label="进阶规则" value={form.progressionNotes ?? ''} onChange={(value) => setForm({ ...form, progressionNotes: value })} />
