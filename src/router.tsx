@@ -324,7 +324,15 @@ function DashboardPage() {
   const weekCompletedSets = weekSessions.reduce((sum, session) => sum + session.completedSets, 0)
   const lastSession = fitnessHistory.data?.[0]
   const hour = new Date().getHours()
-  const greeting = hour < 11 ? '早上好，今天这样安排' : hour < 18 ? '下午好，保持今天的节奏' : '晚上好，看看今天完成了什么'
+  const greeting = hour < 12
+    ? '上午好，今天这样安排'
+    : hour < 14
+      ? '中午好，稍作休息再继续'
+      : hour < 18
+        ? '下午好，保持今天的节奏'
+        : hour < 20
+          ? '傍晚好，看看今天完成了什么'
+          : '晚上好，看看今天完成了什么'
   const workoutAction = todaySession?.status === 'in_progress'
     ? '继续训练'
     : todaySession
