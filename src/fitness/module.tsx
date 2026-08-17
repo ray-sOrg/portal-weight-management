@@ -284,12 +284,15 @@ export function FitnessTodayPage() {
   const addSet = useAddFitnessSet()
   const restTimer = useRestTimer()
   const [celebration, setCelebration] = useState<FitnessSession | null>(null)
+  const [selectedWeekday, setSelectedWeekday] = useState<number | null>(null)
   if (isLoading) return <FitnessLoading />
   if (error) return <FitnessError message={error.message} />
   if (!data) return <FitnessError message="训练数据读取失败。" />
   if (!activePlan) return <FitnessNoPlanPrompt />
 
-  const todayDay = activePlan.days.find((day) => day.weekday === data.todayWeekday)
+  const displayWeekday = selectedWeekday ?? data.todayWeekday
+  const selectedDay = activePlan.days.find((day) => day.weekday === displayWeekday)
+  const isTodaySelected = displayWeekday === data.todayWeekday
   const session = data.todaySession
   const trainingDays = activePlan.days.filter((day) => !day.isRest).length
   const activeSetId = session?.status === 'in_progress'
@@ -299,25 +302,28 @@ export function FitnessTodayPage() {
   return (
     <FitnessShell
       eyebrow={`${data.today} · ${WEEKDAYS[data.todayWeekday - 1]}`}
-      title={todayDay?.name ?? '今日未安排训练'}
-      body={todayDay?.focus ?? '恢复也是计划的一部分。保持轻松活动，给下一次训练留出状态。'}
+      title={selectedDay?.name ?? '当天未安排训练'}
+      body={selectedDay?.focus ?? '恢复也是计划的一部分。保持轻松活动，给下一次训练留出状态。'}
       action={
         <div className="grid grid-cols-3 gap-2 text-center">
           <HeroStat value={`${activePlan.durationWeeks}`} label="计划周数" />
           <HeroStat value={`${trainingDays}`} label="每周训练" />
-          <HeroStat value={`${todayDay?.estimatedMinutes ?? 0}`} label="预计分钟" />
+          <HeroStat value={`${selectedDay?.estimatedMinutes ?? 0}`} label="预计分钟" />
         </div>
       }
     >
       <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
         {activePlan.days.map((day) => (
-          <div
+          <button
+            type="button"
             key={day.weekday}
+            onClick={() => setSelectedWeekday(day.weekday)}
+            aria-pressed={day.weekday === displayWeekday}
             className={cn(
               'rounded-xl border px-1.5 py-3 text-center transition sm:px-3',
-              day.weekday === data.todayWeekday
+              day.weekday === displayWeekday
                 ? 'border-[#13251f] bg-[#13251f] text-white shadow-lg'
-                : 'border-line bg-white text-sage-dark',
+                : 'border-line bg-white text-sage-dark hover:border-sage hover:bg-mist',
             )}
           >
             <p className="text-[10px] font-semibold sm:text-xs">{WEEKDAYS[day.weekday - 1]}</p>
@@ -328,26 +334,26 @@ export function FitnessTodayPage() {
               )}
             />
             <p className="mt-2 hidden truncate text-[11px] opacity-70 sm:block">{day.name}</p>
-          </div>
+          </button>
         ))}
       </div>
 
-      {todayDay?.exercises.length ? (
+      {selectedDay?.exercises.length ? (
         <section className="space-y-3">
           <div className="flex items-end justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sage-dark">
-                今日清单
+                {isTodaySelected ? '今日清单' : `${WEEKDAYS[displayWeekday - 1]}安排`}
               </p>
               <h2 className="mt-1 font-display text-3xl font-semibold">按顺序完成</h2>
             </div>
-            {session ? (
+            {isTodaySelected && session ? (
               <span className="rounded-full bg-[#eafbb5] px-3 py-1 text-xs font-semibold tabular-nums text-[#314017]">
                 {session.completedSets}/{session.totalSets} 组
               </span>
             ) : null}
           </div>
-          {session ? (
+          {isTodaySelected && session ? (
             <>
               <SessionProgress session={session} />
               <div className="grid gap-3">
@@ -380,7 +386,7 @@ export function FitnessTodayPage() {
                   : saveFeedback.mutate(input)}
               />
             </>
-          ) : (
+          ) : isTodaySelected ? (
             <Panel className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="font-display text-2xl font-semibold">准备好就开始</h3>
@@ -390,14 +396,34 @@ export function FitnessTodayPage() {
                 <Play size={17} />{startSession.isPending ? '创建中' : '开始今日训练'}
               </Button>
             </Panel>
+          ) : (
+            <PlannedDayPreview day={selectedDay} />
           )}
         </section>
       ) : (
-        <EmptyState title="今天是恢复日" body={todayDay?.notes || '走路、拉伸和睡眠同样属于训练计划。'} />
+        <EmptyState title="当天没有安排" body={selectedDay?.notes || '走路、拉伸和睡眠同样属于训练计划。'} />
       )}
       {restTimer.visible ? <RestTimer {...restTimer} /> : null}
       {celebration ? <WorkoutCelebration session={celebration} onClose={() => setCelebration(null)} /> : null}
     </FitnessShell>
+  )
+}
+
+function PlannedDayPreview({ day }: { day: FitnessPlanDay }) {
+  return (
+    <div className="grid gap-2.5">
+      {day.exercises.map((item, index) => (
+        <article key={item.id ?? `${item.exerciseId}-${index}`} className="flex items-start gap-3 rounded-2xl border border-line bg-white p-4 shadow-sm">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-mist font-display font-semibold text-sage-dark">{String(index + 1).padStart(2, '0')}</span>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-ink">{item.exercise?.name ?? '未命名动作'}</h3>
+            <p className="mt-1 text-xs text-sage-dark">{formatPlanExerciseTarget(item)}{item.restSeconds ? ` · 休息 ${formatDuration(item.restSeconds)}` : ''}</p>
+            {item.planNotes ? <p className="mt-1.5 text-xs leading-5 text-sage">{item.planNotes}</p> : null}
+          </div>
+        </article>
+      ))}
+      <p className="px-1 text-xs text-sage">这里只预览计划；回到今天才能开始或继续训练。</p>
+    </div>
   )
 }
 
@@ -563,7 +589,7 @@ function WorkoutExerciseCard({
         </button>
       </div>
       <div className="divide-y divide-line">
-        {exercise.sets.map((fitnessSet, setIndex) => (
+        {exercise.sets.map((fitnessSet) => (
           <WorkoutSetRow
             key={`${fitnessSet.id}-${fitnessSet.updatedAt}`}
             fitnessSet={fitnessSet}
@@ -571,7 +597,7 @@ function WorkoutExerciseCard({
             previousSet={previousSetByNumber.get(fitnessSet.setNumber)}
             pending={savingSetId === fitnessSet.id}
             active={activeSetId === fitnessSet.id}
-            locked={!fitnessSet.completed && setIndex > 0 && !exercise.sets[setIndex - 1]?.completed}
+            locked={!fitnessSet.completed && activeSetId !== fitnessSet.id}
             onSave={onSave}
           />
         ))}
@@ -603,30 +629,34 @@ function WorkoutSetRow({ fitnessSet, exercise, previousSet, pending, active, loc
   const [weight, setWeight] = useState(() => String(fitnessSet.completed ? fitnessSet.actualWeightKg ?? '' : fitnessSet.actualWeightKg ?? previousSet?.actualWeightKg ?? exercise.targetWeightKg ?? ''))
   const [rir, setRir] = useState(() => String(fitnessSet.rir ?? ''))
   const [timerStartedAt, setTimerStartedAt] = useState<number | null>(null)
-  const [timerBaseSeconds, setTimerBaseSeconds] = useState(() => nullableNumber(duration) ?? 0)
+  const [elapsedSeconds, setElapsedSeconds] = useState(() => fitnessSet.actualDurationSeconds ?? 0)
+  const [timerBaseSeconds, setTimerBaseSeconds] = useState(() => fitnessSet.actualDurationSeconds ?? 0)
   useEffect(() => {
     if (timerStartedAt === null) return
-    const updateDuration = () => {
-      setDuration(String(timerBaseSeconds + Math.floor((Date.now() - timerStartedAt) / 1000)))
+    const updateTimer = () => {
+      const nextSeconds = timerBaseSeconds + Math.floor((Date.now() - timerStartedAt) / 1000)
+      setElapsedSeconds(nextSeconds)
+      if (exercise.metricType === 'duration') setDuration(String(nextSeconds))
     }
-    updateDuration()
-    const timer = window.setInterval(updateDuration, 250)
+    updateTimer()
+    const timer = window.setInterval(updateTimer, 250)
     return () => window.clearInterval(timer)
-  }, [timerBaseSeconds, timerStartedAt])
+  }, [exercise.metricType, timerBaseSeconds, timerStartedAt])
 
   const toggleDurationTimer = () => {
     if (timerStartedAt === null) {
-      setTimerBaseSeconds(nullableNumber(duration) ?? 0)
+      setTimerBaseSeconds(elapsedSeconds)
       setTimerStartedAt(Date.now())
       return
     }
-    setTimerBaseSeconds(nullableNumber(duration) ?? timerBaseSeconds)
+    setTimerBaseSeconds(elapsedSeconds)
     setTimerStartedAt(null)
   }
   const resetDurationTimer = () => {
     setTimerStartedAt(null)
     setTimerBaseSeconds(0)
-    setDuration('0')
+    setElapsedSeconds(0)
+    if (exercise.metricType === 'duration') setDuration('0')
   }
   const toggleSet = () => onSave({
     id: fitnessSet.id,
@@ -648,20 +678,20 @@ function WorkoutSetRow({ fitnessSet, exercise, previousSet, pending, active, loc
         {locked ? <p className="mt-1 text-[9px] font-semibold text-sage">等待上一组</p> : null}
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {exercise.metricType === 'reps' ? <CompactInput label="次数" value={reps} onChange={setReps} disabled={locked} hint={previousSet?.actualReps != null ? `上次 ${previousSet.actualReps} 次` : undefined} /> : null}
-        {exercise.metricType === 'duration' ? (
-          <div>
-            <CompactInput label="秒" value={duration} onChange={setDuration} disabled={locked} hint={previousSet?.actualDurationSeconds != null ? `上次 ${previousSet.actualDurationSeconds} 秒` : undefined} />
-            <div className="mt-1.5 flex gap-1.5">
-              <button type="button" onClick={toggleDurationTimer} disabled={locked || fitnessSet.completed} className="inline-flex h-7 items-center gap-1 rounded-md bg-[#13251f] px-2 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">
-                {timerStartedAt === null ? <Play size={11} /> : <Pause size={11} />}{timerStartedAt === null ? '开始计时' : '暂停计时'}
-              </button>
-              {(nullableNumber(duration) ?? 0) > 0 ? <button type="button" onClick={resetDurationTimer} disabled={locked || fitnessSet.completed} className="h-7 rounded-md bg-mist px-2 text-[10px] font-semibold text-sage-dark disabled:opacity-40">归零</button> : null}
-            </div>
+        {exercise.metricType === 'reps' ? <CompactInput label="次数" value={reps} onChange={setReps} disabled={locked || fitnessSet.completed} hint={previousSet?.actualReps != null ? `上次 ${previousSet.actualReps} 次` : undefined} /> : null}
+        {exercise.metricType === 'duration' ? <CompactInput label="秒" value={duration} onChange={setDuration} disabled={locked || fitnessSet.completed} hint={previousSet?.actualDurationSeconds != null ? `上次 ${previousSet.actualDurationSeconds} 秒` : undefined} /> : null}
+        {exerciseUsesExternalWeight(exercise) ? <CompactInput label={weightInputLabel(exercise)} value={weight} onChange={setWeight} step="0.5" disabled={locked || fitnessSet.completed} hint={previousSet?.actualWeightKg != null ? `上次 ${previousSet.actualWeightKg} kg` : weightRuleHint(exercise)} /> : null}
+        {exercise.rirMin !== null ? <CompactInput label="RIR（可选）" value={rir} onChange={setRir} disabled={locked || fitnessSet.completed} placeholder="不必填" hint="还能再做几次；0=力竭，2=还能做2次" /> : null}
+        <div className="col-span-2 sm:col-span-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-sage">本组计时</p>
+          <div className="mt-1 flex items-center gap-2">
+            <span className="min-w-14 font-display text-lg font-semibold tabular-nums text-ink">{formatClock(elapsedSeconds)}</span>
+            <button type="button" onClick={toggleDurationTimer} disabled={locked || fitnessSet.completed} className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#13251f] px-2.5 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-35">
+              {timerStartedAt === null ? <Play size={12} /> : <Pause size={12} />}{timerStartedAt === null ? '开始' : '暂停'}
+            </button>
+            {elapsedSeconds > 0 ? <button type="button" onClick={resetDurationTimer} disabled={locked || fitnessSet.completed} className="h-8 rounded-lg bg-mist px-2.5 text-[10px] font-semibold text-sage-dark disabled:opacity-35">归零</button> : null}
           </div>
-        ) : null}
-        {exerciseUsesExternalWeight(exercise) ? <CompactInput label={weightInputLabel(exercise)} value={weight} onChange={setWeight} step="0.5" disabled={locked} hint={previousSet?.actualWeightKg != null ? `上次 ${previousSet.actualWeightKg} kg` : weightRuleHint(exercise)} /> : null}
-        {exercise.rirMin !== null ? <CompactInput label="RIR（可选）" value={rir} onChange={setRir} disabled={locked} placeholder="不必填" hint="还能再做几次；0=力竭，2=还能做2次" /> : null}
+        </div>
       </div>
       <Button
         type="button"
@@ -1834,6 +1864,17 @@ function formatSessionExerciseTarget(item: FitnessSessionExercise) {
     return `${sets}${formatRange(item.repsMin, item.repsMax)}次${item.eachSide ? '/侧' : ''}`
   }
   return item.targetSets ? `${item.targetSets}组` : '完成'
+}
+
+function formatPlanExerciseTarget(item: FitnessPlanExercise) {
+  const sets = item.sets ? `${item.sets}组 × ` : ''
+  if (item.durationSecondsMin !== null) {
+    return `${sets}${formatRange(item.durationSecondsMin, item.durationSecondsMax)}秒`
+  }
+  if (item.repsMin !== null) {
+    return `${sets}${formatRange(item.repsMin, item.repsMax)}次${item.eachSide ? '/侧' : ''}`
+  }
+  return item.exercise?.metricType === 'check' ? '完成即可' : sets.replace(' × ', '') || '--'
 }
 
 function formatNumber(value: number) {
