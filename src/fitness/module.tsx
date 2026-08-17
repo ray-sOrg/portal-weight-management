@@ -386,6 +386,8 @@ export function FitnessTodayPage() {
                   : saveFeedback.mutate(input)}
               />
             </>
+          ) : isTodaySelected && startSession.isPending ? (
+            <WorkoutStartingState exerciseCount={selectedDay.exercises.length} />
           ) : isTodaySelected ? (
             <Panel className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -406,6 +408,24 @@ export function FitnessTodayPage() {
       {restTimer.visible ? <RestTimer {...restTimer} /> : null}
       {celebration ? <WorkoutCelebration session={celebration} onClose={() => setCelebration(null)} /> : null}
     </FitnessShell>
+  )
+}
+
+function WorkoutStartingState({ exerciseCount }: { exerciseCount: number }) {
+  return (
+    <Panel className="relative overflow-hidden">
+      <div className="absolute inset-x-0 top-0 h-1 overflow-hidden bg-mint/50">
+        <div className="h-full w-1/3 animate-[pulse_1s_ease-in-out_infinite] rounded-full bg-[#355e4d] motion-reduce:animate-none" />
+      </div>
+      <div className="flex min-h-44 flex-col items-center justify-center px-4 text-center" role="status" aria-live="polite">
+        <span className="relative flex size-12 items-center justify-center rounded-full bg-[#13251f] text-[#d8f96f] shadow-lg">
+          <LoaderCircle className="animate-spin motion-reduce:animate-none" size={23} />
+          <span className="absolute -inset-1 animate-ping rounded-full border border-[#8fad72]/40 motion-reduce:animate-none" />
+        </span>
+        <h3 className="mt-4 font-display text-2xl font-semibold">正在准备今日训练</h3>
+        <p className="mt-1.5 text-sm leading-6 text-sage">正在生成 {exerciseCount} 个动作的组数和记录项，请稍候…</p>
+      </div>
+    </Panel>
   )
 }
 
@@ -682,16 +702,18 @@ function WorkoutSetRow({ fitnessSet, exercise, previousSet, pending, active, loc
         {exercise.metricType === 'duration' ? <CompactInput label="秒" value={duration} onChange={setDuration} disabled={locked || fitnessSet.completed} hint={previousSet?.actualDurationSeconds != null ? `上次 ${previousSet.actualDurationSeconds} 秒` : undefined} /> : null}
         {exerciseUsesExternalWeight(exercise) ? <CompactInput label={weightInputLabel(exercise)} value={weight} onChange={setWeight} step="0.5" disabled={locked || fitnessSet.completed} hint={previousSet?.actualWeightKg != null ? `上次 ${previousSet.actualWeightKg} kg` : weightRuleHint(exercise)} /> : null}
         {exercise.rirMin !== null ? <CompactInput label="RIR（可选）" value={rir} onChange={setRir} disabled={locked || fitnessSet.completed} placeholder="不必填" hint="还能再做几次；0=力竭，2=还能做2次" /> : null}
-        <div className="col-span-2 sm:col-span-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-sage">本组计时</p>
-          <div className="mt-1 flex items-center gap-2">
-            <span className="min-w-14 font-display text-lg font-semibold tabular-nums text-ink">{formatClock(elapsedSeconds)}</span>
-            <button type="button" onClick={toggleDurationTimer} disabled={locked || fitnessSet.completed} className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#13251f] px-2.5 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-35">
-              {timerStartedAt === null ? <Play size={12} /> : <Pause size={12} />}{timerStartedAt === null ? '开始' : '暂停'}
-            </button>
-            {elapsedSeconds > 0 ? <button type="button" onClick={resetDurationTimer} disabled={locked || fitnessSet.completed} className="h-8 rounded-lg bg-mist px-2.5 text-[10px] font-semibold text-sage-dark disabled:opacity-35">归零</button> : null}
+        {exercise.metricType === 'duration' ? (
+          <div className="col-span-2 sm:col-span-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-sage">本组计时</p>
+            <div className="mt-1 flex items-center gap-2">
+              <span className="min-w-14 font-display text-lg font-semibold tabular-nums text-ink">{formatClock(elapsedSeconds)}</span>
+              <button type="button" onClick={toggleDurationTimer} disabled={locked || fitnessSet.completed} className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#13251f] px-2.5 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-35">
+                {timerStartedAt === null ? <Play size={12} /> : <Pause size={12} />}{timerStartedAt === null ? '开始' : '暂停'}
+              </button>
+              {elapsedSeconds > 0 ? <button type="button" onClick={resetDurationTimer} disabled={locked || fitnessSet.completed} className="h-8 rounded-lg bg-mist px-2.5 text-[10px] font-semibold text-sage-dark disabled:opacity-35">归零</button> : null}
+            </div>
           </div>
-        </div>
+        ) : null}
       </div>
       <Button
         type="button"
@@ -1616,10 +1638,15 @@ export function FitnessHistoryPage() {
     >
       {history.isLoading ? <FitnessLoading /> : history.error ? <FitnessError message={history.error.message} /> : history.data?.length ? (
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <HistoryStat label="训练次数" value={`${history.data.length}`} />
             <HistoryStat label="完成组数" value={`${history.data.reduce((sum, item) => sum + item.completedSets, 0)}`} />
-            <HistoryStat label="总容量" value={`${formatNumber(history.data.reduce((sum, item) => sum + item.totalVolumeKg, 0))} kg`} />
+            <HistoryStat
+              className="col-span-2 sm:col-span-1"
+              label="累计训练量"
+              value={`${formatNumber(history.data.reduce((sum, item) => sum + item.totalVolumeKg, 0))} kg·次`}
+              detail="只统计重量动作，等于每组重量 × 完成次数后相加"
+            />
           </div>
           <RecoveryInsights sessions={history.data} />
           <TrainingCalendar sessions={history.data} />
@@ -1640,7 +1667,7 @@ export function FitnessHistoryPage() {
                     <span className="font-semibold text-ink">{session.name}</span>
                     <StatusBadge status={session.status} />
                   </span>
-                  <span className="mt-1 block text-sm text-sage">{session.exerciseCount} 个动作 · {session.completedSets}/{session.totalSets} 组 · {formatNumber(session.totalVolumeKg)} kg</span>
+                  <span className="mt-1 block text-sm text-sage">{session.exerciseCount} 个动作 · {session.completedSets}/{session.totalSets} 组 · 训练量 {formatNumber(session.totalVolumeKg)} kg·次</span>
                 </span>
                 <span className="text-left sm:text-right">
                   <span className="block text-sm font-semibold tabular-nums text-ink">{session.progressPercent}%</span>
@@ -1712,25 +1739,49 @@ function TrainingCalendar({ sessions }: { sessions: FitnessSessionSummary[] }) {
     [sessions],
   )
   const cells = useMemo(() => buildCalendarCells(sessionByDate), [sessionByDate])
+  const dateRange = `${formatShortCalendarDate(cells[0].date)} – ${formatShortCalendarDate(cells[cells.length - 1].date)}`
   return (
     <Panel className="overflow-hidden">
-      <div className="flex items-end justify-between gap-3">
-        <div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-sage-dark">最近 12 周</p><h2 className="mt-1 font-display text-2xl font-semibold">训练节奏</h2></div>
-        <div className="flex items-center gap-2 text-[10px] text-sage"><span>少</span><span className="size-3 rounded-sm bg-mist" /><span className="size-3 rounded-sm bg-[#d8f96f]" /><span className="size-3 rounded-sm bg-[#355e4d]" /><span>多</span></div>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sage-dark">最近 12 周</p>
+        <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
+          <h2 className="font-display text-2xl font-semibold">训练日历</h2>
+          <p className="text-xs tabular-nums text-sage">{dateRange}</p>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-sage">每个格子代表一天，数字是日期；有颜色表示当天留下了训练记录。</p>
       </div>
-      <div className="mt-4 overflow-x-auto pb-1">
-        <div className="grid min-w-[580px] auto-cols-[0.875rem] grid-flow-col grid-rows-7 gap-1.5">
+      <div className="mt-4 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold text-sage">
+        {WEEKDAYS.map((weekday) => <span key={weekday}>{weekday.slice(1)}</span>)}
+      </div>
+      <div className="mt-1.5 grid grid-cols-7 gap-1 sm:gap-1.5">
           {cells.map((cell) => (
             <div
               key={cell.date}
-              title={`${cell.date}${cell.session ? ` · ${cell.session.name} · ${cell.session.completedSets}/${cell.session.totalSets}组` : ' · 未训练'}`}
-              className={cn('size-3.5 rounded-[4px] border border-line/60', calendarTone(cell.session))}
-            />
+              title={calendarCellDescription(cell)}
+              aria-label={calendarCellDescription(cell)}
+              className={cn(
+                'relative flex h-9 min-w-0 items-center justify-center rounded-lg border text-[11px] tabular-nums sm:h-10 sm:text-xs',
+                calendarTone(cell.session, cell.future),
+                cell.today && 'ring-2 ring-[#13251f] ring-offset-1',
+              )}
+            >
+              <span className={cn(cell.session?.status === 'completed' && 'font-bold')}>{Number(cell.date.slice(8, 10))}</span>
+              {cell.date.slice(8, 10) === '01' ? <span className="absolute left-1 top-0.5 hidden text-[7px] font-semibold opacity-70 sm:block">{Number(cell.date.slice(5, 7))}月</span> : null}
+            </div>
           ))}
-        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[10px] text-sage">
+        <CalendarLegend tone="bg-[#355e4d]" label="完成" />
+        <CalendarLegend tone="bg-[#d8f96f]" label="部分完成/进行中" />
+        <CalendarLegend tone="bg-gold/50" label="跳过" />
+        <CalendarLegend tone="bg-white" label="未训练" />
       </div>
     </Panel>
   )
+}
+
+function CalendarLegend({ tone, label }: { tone: string; label: string }) {
+  return <span className="inline-flex items-center gap-1.5"><span className={cn('size-3 rounded border border-line', tone)} />{label}</span>
 }
 
 function SessionDetail({ session, loading, error, deleting, onDelete }: {
@@ -1822,11 +1873,12 @@ export function FitnessRecordsPage() {
   )
 }
 
-function HistoryStat({ label, value }: { label: string; value: string }) {
+function HistoryStat({ label, value, detail, className }: { label: string; value: string; detail?: string; className?: string }) {
   return (
-    <div className="rounded-xl border border-line bg-white p-3 sm:p-4">
+    <div className={cn('rounded-xl border border-line bg-white p-3 sm:p-4', className)}>
       <p className="text-[10px] font-semibold uppercase tracking-wide text-sage">{label}</p>
-      <p className="mt-1 truncate font-display text-xl font-semibold tabular-nums sm:text-2xl">{value}</p>
+      <p className="mt-1 break-words font-display text-xl font-semibold tabular-nums sm:text-2xl">{value}</p>
+      {detail ? <p className="mt-1.5 text-[10px] leading-4 text-sage">{detail}</p> : null}
     </div>
   )
 }
@@ -1888,6 +1940,7 @@ function formatClock(seconds: number) {
 }
 
 function buildCalendarCells(sessionByDate: Map<string, FitnessSessionSummary>) {
+  const today = formatLocalDate(new Date())
   const end = new Date()
   end.setHours(12, 0, 0, 0)
   const daysUntilSunday = (7 - end.getDay()) % 7
@@ -1898,16 +1951,26 @@ function buildCalendarCells(sessionByDate: Map<string, FitnessSessionSummary>) {
     const current = new Date(start)
     current.setDate(start.getDate() + index)
     const date = formatLocalDate(current)
-    return { date, session: sessionByDate.get(date) }
+    return { date, session: sessionByDate.get(date), today: date === today, future: date > today }
   })
 }
 
-function calendarTone(session?: FitnessSessionSummary) {
-  if (!session) return 'bg-mist'
-  if (session.status === 'skipped') return 'bg-gold/35'
-  if (session.progressPercent >= 100) return 'bg-[#355e4d]'
-  if (session.progressPercent >= 50) return 'bg-[#8fad72]'
-  return 'bg-[#d8f96f]'
+function calendarTone(session: FitnessSessionSummary | undefined, future: boolean) {
+  if (future) return 'border-dashed border-line/70 bg-mist/30 text-sage/35'
+  if (!session) return 'border-line bg-white text-sage'
+  if (session.status === 'skipped') return 'border-gold/50 bg-gold/50 text-amber-900'
+  if (session.progressPercent >= 100) return 'border-[#355e4d] bg-[#355e4d] text-white'
+  return 'border-[#bad85f] bg-[#d8f96f] text-[#314017]'
+}
+
+function calendarCellDescription(cell: ReturnType<typeof buildCalendarCells>[number]) {
+  if (cell.future) return `${cell.date} · 尚未到来`
+  if (!cell.session) return `${cell.date} · 未训练`
+  return `${cell.date} · ${cell.session.name} · ${cell.session.completedSets}/${cell.session.totalSets}组`
+}
+
+function formatShortCalendarDate(date: string) {
+  return `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日`
 }
 
 function formatLocalDate(value: Date) {

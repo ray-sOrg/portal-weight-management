@@ -26,6 +26,7 @@ import {
 } from './server-api'
 import type {
   AppData,
+  FitnessBootstrap,
   FitnessExerciseInput,
   FitnessFeedbackInput,
   FitnessPlanInput,
@@ -167,7 +168,10 @@ export function useStartFitnessSession() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () => startServerFitnessSession(),
-    onSuccess: () => {
+    onSuccess: (session) => {
+      queryClient.setQueryData<FitnessBootstrap>(['fitness-data'], (current) => (
+        current ? { ...current, todaySession: session } : current
+      ))
       toast.success('今日训练已开始')
       void queryClient.invalidateQueries({ queryKey: ['fitness-data'] })
     },
