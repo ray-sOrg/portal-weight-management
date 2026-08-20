@@ -9,6 +9,7 @@ import {
   createServerTrackedPerson,
   deleteServerFitnessPlan,
   deleteServerFitnessSession,
+  deferServerFitnessSet,
   editServerWeightEntry,
   finishServerFitnessSession,
   loadFitnessBootstrap,
@@ -190,6 +191,21 @@ export function useSaveFitnessSet() {
       })
       void queryClient.invalidateQueries({ queryKey: ['fitness-history'] })
       void queryClient.invalidateQueries({ queryKey: ['fitness-records'] })
+    },
+    onError: (error) => toast.error(error.message),
+  })
+}
+
+export function useDeferFitnessSet() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => deferServerFitnessSet(id),
+    onSuccess: (session) => {
+      queryClient.setQueryData(['fitness-data'], (current: unknown) => {
+        if (!current || typeof current !== 'object') return current
+        return { ...current, todaySession: session }
+      })
+      toast.success('已放到本次训练末尾，稍后回来补')
     },
     onError: (error) => toast.error(error.message),
   })

@@ -177,6 +177,7 @@ export type FitnessSet = {
   rir: number | null
   completed: boolean
   completedAt: string | null
+  deferredAt: string | null
   notes: string | null
   createdAt: string | null
   updatedAt: string | null

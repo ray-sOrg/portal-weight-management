@@ -276,6 +276,13 @@ export async function saveServerFitnessSet(input: FitnessSetInput) {
   })
 }
 
+export async function deferServerFitnessSet(id: number) {
+  return request<FitnessSession>('/api/fitness/session/set/defer', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  })
+}
+
 export async function addServerFitnessSet(exerciseId: number) {
   return request<FitnessSession>('/api/fitness/session/exercise/set/add', {
     method: 'POST',
