@@ -31,6 +31,7 @@ import {
 import { CSSProperties, FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
 import { Button, EmptyState, Input, Label, Panel } from '@/components/ui'
 import {
+  useActivateFitnessSet,
   useAddFitnessSet,
   useArchiveFitnessExercise,
   useActivateFitnessPlan,
@@ -284,6 +285,7 @@ export function FitnessTodayPage() {
   const saveFeedback = useSaveFitnessFeedback()
   const saveSet = useSaveFitnessSet()
   const deferSet = useDeferFitnessSet()
+  const activateSet = useActivateFitnessSet()
   const addSet = useAddFitnessSet()
   const restTimer = useRestTimer()
   const [celebration, setCelebration] = useState<FitnessSession | null>(null)
@@ -368,6 +370,7 @@ export function FitnessTodayPage() {
                     activeSetId={activeSetId}
                     savingSetId={saveSet.isPending ? saveSet.variables?.id : undefined}
                     deferringSetId={deferSet.isPending ? deferSet.variables : undefined}
+                    activatingSetId={activateSet.isPending ? activateSet.variables : undefined}
                     addingSet={addSet.isPending && addSet.variables === exercise.id}
                     canAddSet={session.status === 'in_progress'}
                     onAddSet={() => addSet.mutate(exercise.id)}
@@ -379,6 +382,7 @@ export function FitnessTodayPage() {
                       })
                     }
                     onDefer={(id) => deferSet.mutate(id)}
+                    onActivate={(id) => activateSet.mutate(id)}
                   />
                 ))}
               </div>
@@ -574,22 +578,26 @@ function WorkoutExerciseCard({
   activeSetId,
   savingSetId,
   deferringSetId,
+  activatingSetId,
   addingSet,
   canAddSet,
   onAddSet,
   onSave,
   onDefer,
+  onActivate,
 }: {
   exercise: FitnessSessionExercise
   index: number
   activeSetId?: number
   savingSetId?: number
   deferringSetId?: number
+  activatingSetId?: number
   addingSet: boolean
   canAddSet: boolean
   onAddSet: () => void
   onSave: (input: Parameters<ReturnType<typeof useSaveFitnessSet>['mutate']>[0], restSeconds: number | null) => void
   onDefer: (id: number) => void
+  onActivate: (id: number) => void
 }) {
   const [showDetails, setShowDetails] = useState(false)
   const previousSetByNumber = useMemo(
@@ -626,10 +634,12 @@ function WorkoutExerciseCard({
             previousSet={previousSetByNumber.get(fitnessSet.setNumber)}
             saving={savingSetId === fitnessSet.id}
             deferring={deferringSetId === fitnessSet.id}
+            activating={activatingSetId === fitnessSet.id}
             active={activeSetId === fitnessSet.id}
             locked={!fitnessSet.completed && activeSetId !== fitnessSet.id}
             onSave={onSave}
             onDefer={onDefer}
+            onActivate={onActivate}
           />
         ))}
       </div>
@@ -646,16 +656,18 @@ function WorkoutExerciseCard({
   </>
 }
 
-function WorkoutSetRow({ fitnessSet, exercise, previousSet, saving, deferring, active, locked, onSave, onDefer }: {
+function WorkoutSetRow({ fitnessSet, exercise, previousSet, saving, deferring, activating, active, locked, onSave, onDefer, onActivate }: {
   fitnessSet: FitnessSet
   exercise: FitnessSessionExercise
   previousSet?: FitnessSet
   saving: boolean
   deferring: boolean
+  activating: boolean
   active: boolean
   locked: boolean
   onSave: (input: Parameters<ReturnType<typeof useSaveFitnessSet>['mutate']>[0], restSeconds: number | null) => void
   onDefer: (id: number) => void
+  onActivate: (id: number) => void
 }) {
   const [reps, setReps] = useState(() => String(fitnessSet.completed ? fitnessSet.actualReps ?? '' : fitnessSet.actualReps ?? previousSet?.actualReps ?? exercise.repsMin ?? ''))
   const [duration, setDuration] = useState(() => String(fitnessSet.completed ? fitnessSet.actualDurationSeconds ?? '' : fitnessSet.actualDurationSeconds ?? previousSet?.actualDurationSeconds ?? exercise.durationSecondsMin ?? ''))
@@ -701,15 +713,15 @@ function WorkoutSetRow({ fitnessSet, exercise, previousSet, saving, deferring, a
   }, exercise.restSeconds)
 
   return (
-    <div className={cn('relative grid gap-3 px-4 py-3 transition sm:grid-cols-[3rem_1fr_auto] sm:items-end', fitnessSet.completed && 'bg-mint/20', fitnessSet.deferredAt && !active && 'bg-amber-50/70', active && 'fitness-active-set bg-[#f2f9e4]', locked && 'opacity-55')}>
+    <div className={cn('relative grid gap-3 px-4 py-3 transition sm:grid-cols-[3rem_1fr_auto] sm:items-end', fitnessSet.completed && 'bg-mint/20', fitnessSet.deferredAt && !active && 'bg-amber-50/70', active && 'fitness-active-set bg-[#f2f9e4]', locked && !fitnessSet.deferredAt && 'opacity-55')}>
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-wide text-sage">组</p>
         <div className="mt-1 flex items-center gap-2">
           <p className="font-semibold tabular-nums">{fitnessSet.setNumber}</p>
           {active ? <span className="fitness-live-indicator" aria-label="当前正在进行"><span /><span /><span /></span> : null}
-          {fitnessSet.deferredAt ? <span className="rounded-full bg-gold/25 px-1.5 py-0.5 text-[9px] font-semibold text-amber-800">待补</span> : null}
+          {fitnessSet.deferredAt ? <span className="rounded-full bg-gold/25 px-1.5 py-0.5 text-[9px] font-semibold text-amber-800">{active ? '补做中' : '待补'}</span> : null}
         </div>
-        {locked ? <p className="mt-1 text-[9px] font-semibold text-sage">等待上一组</p> : null}
+        {locked ? <p className="mt-1 text-[9px] font-semibold text-sage">{fitnessSet.deferredAt ? '已跳过，可随时回来补' : '等待上一组'}</p> : null}
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {exercise.metricType === 'reps' ? <CompactInput label="次数" value={reps} onChange={setReps} disabled={locked || fitnessSet.completed} hint={previousSet?.actualReps != null ? `上次 ${previousSet.actualReps} 次` : undefined} /> : null}
@@ -735,21 +747,27 @@ function WorkoutSetRow({ fitnessSet, exercise, previousSet, saving, deferring, a
             {deferring ? <LoaderCircle className="animate-spin" size={15} /> : <SkipForward size={15} />}{deferring ? '跳过中' : '暂时跳过'}
           </Button>
         ) : null}
-        <Button
-          type="button"
-          variant={fitnessSet.completed ? 'secondary' : 'primary'}
-          className="w-full px-2"
-          onClick={toggleSet}
-          disabled={saving || deferring || locked}
-        >
-          {saving
-            ? <><LoaderCircle className="animate-spin" size={16} />处理中</>
-            : locked
-              ? <><Clock3 size={16} />待解锁</>
-              : fitnessSet.completed
-                ? <><Pause size={16} />撤销完成</>
-                : <><Check size={16} />完成</>}
-        </Button>
+        {locked && fitnessSet.deferredAt ? (
+          <Button type="button" variant="secondary" className="w-full border-amber-300 bg-amber-50 px-2 text-amber-900 hover:bg-amber-100" onClick={() => onActivate(fitnessSet.id)} disabled={activating || saving || deferring}>
+            {activating ? <><LoaderCircle className="animate-spin" size={16} />切换中</> : <><Play size={16} />现在补</>}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant={fitnessSet.completed ? 'secondary' : 'primary'}
+            className="w-full px-2"
+            onClick={toggleSet}
+            disabled={saving || deferring || activating || locked}
+          >
+            {saving
+              ? <><LoaderCircle className="animate-spin" size={16} />处理中</>
+              : locked
+                ? <><Clock3 size={16} />待解锁</>
+                : fitnessSet.completed
+                  ? <><Pause size={16} />撤销完成</>
+                  : <><Check size={16} />完成</>}
+          </Button>
+        )}
       </div>
     </div>
   )

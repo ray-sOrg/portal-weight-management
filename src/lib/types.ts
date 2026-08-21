@@ -178,6 +178,7 @@ export type FitnessSet = {
   completed: boolean
   completedAt: string | null
   deferredAt: string | null
+  activatedAt: string | null
   notes: string | null
   createdAt: string | null
   updatedAt: string | null
