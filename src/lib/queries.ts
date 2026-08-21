@@ -13,6 +13,7 @@ import {
   deferServerFitnessSet,
   editServerWeightEntry,
   finishServerFitnessSession,
+  getCurrentUser,
   loadFitnessBootstrap,
   loadFitnessHistory,
   loadFitnessExport,
@@ -38,11 +39,20 @@ import type {
   NewWeightGoal,
 } from './types'
 
-export function useAppData() {
+export function useCurrentUser() {
+  return useQuery({
+    queryKey: ['current-user'],
+    queryFn: getCurrentUser,
+    retry: false,
+  })
+}
+
+export function useAppData(enabled = true) {
   return useQuery({
     queryKey: ['app-data'],
     queryFn: loadAppData,
     placeholderData: keepPreviousData,
+    enabled,
   })
 }
 

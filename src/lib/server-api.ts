@@ -35,6 +35,7 @@ type RequestOptions = {
 const AUTH_ERROR_CODES = new Set([5001, 5002, 5003, 5004, 5005])
 const REFRESHABLE_AUTH_CODES = new Set([5001, 5003])
 let refreshRequest: Promise<void> | null = null
+let authCleanupRequest: Promise<void> | null = null
 
 export class ApiRequestError extends Error {
   constructor(
@@ -428,19 +429,30 @@ function parseServerTrackedPersonId(trackedPersonId: string) {
 async function request<T>(path: string, init: RequestInit = {}, options: RequestOptions = {}) {
   const payload = await sendRequest<T>(path, init, options.timeoutMs)
   if (REFRESHABLE_AUTH_CODES.has(payload.code) && !options.skipAuthRefresh) {
-    await refreshAccessToken()
+    try {
+      await refreshAccessToken()
+    } catch (error) {
+      if (isAuthenticationError(error)) await clearStaleSessionCookies()
+      throw error
+    }
     const retryPayload = await sendRequest<T>(path, init, options.timeoutMs)
     if (retryPayload.code !== 200) {
-      throw new ApiRequestError(
+      const error = new ApiRequestError(
         retryPayload.code,
         normalizeApiMessage(retryPayload.message),
       )
+      if (isAuthenticationError(error)) await clearStaleSessionCookies()
+      throw error
     }
     return retryPayload.data
   }
 
   if (payload.code !== 200) {
-    throw new ApiRequestError(payload.code, normalizeApiMessage(payload.message))
+    const error = new ApiRequestError(payload.code, normalizeApiMessage(payload.message))
+    if (!options.skipAuthRefresh && isAuthenticationError(error)) {
+      await clearStaleSessionCookies()
+    }
+    throw error
   }
   return payload.data
 }
@@ -456,6 +468,19 @@ async function refreshAccessToken() {
     })
   }
   await refreshRequest
+}
+
+async function clearStaleSessionCookies() {
+  if (!authCleanupRequest) {
+    authCleanupRequest = sendRequest<Record<string, never>>(
+      '/api/auth/logout',
+      { method: 'POST' },
+      5_000,
+    ).then(() => undefined).catch(() => undefined).finally(() => {
+      authCleanupRequest = null
+    })
+  }
+  await authCleanupRequest
 }
 
 async function sendRequest<T>(path: string, init: RequestInit = {}, timeoutMs = 8_000) {

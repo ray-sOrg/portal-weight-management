@@ -57,8 +57,13 @@ describe('silent authentication refresh', () => {
   })
 
   it('reports signed out only after refresh is also unavailable', async () => {
+    let logoutCalls = 0
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
+      if (url.endsWith('/api/auth/logout')) {
+        logoutCalls += 1
+        return apiResponse(200)
+      }
       if (url.endsWith('/api/user/login/info') || url.endsWith('/api/auth/token/refresh')) {
         return apiResponse(5003, {}, 'Missing token')
       }
@@ -69,5 +74,27 @@ describe('silent authentication refresh', () => {
     const error = await getCurrentUser().catch((reason: unknown) => reason)
 
     expect(isAuthenticationError(error)).toBe(true)
+    expect(logoutCalls).toBe(1)
+  })
+
+  it('clears a revoked legacy session before reporting signed out', async () => {
+    let logoutCalls = 0
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/auth/logout')) {
+        logoutCalls += 1
+        return apiResponse(200)
+      }
+      if (url.endsWith('/api/user/login/info')) {
+        return apiResponse(5005, {}, 'Token has been revoked')
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const error = await getCurrentUser().catch((reason: unknown) => reason)
+
+    expect(isAuthenticationError(error)).toBe(true)
+    expect(logoutCalls).toBe(1)
   })
 })

@@ -50,6 +50,7 @@ import {
 import {
   useAddWeightEntry,
   useAppData,
+  useCurrentUser,
   useFitnessData,
   useFitnessHistory,
   useUpsertGoal,
@@ -846,10 +847,13 @@ function HouseholdPage() {
 }
 
 function SettingsPage() {
-  const { data, error, isLoading, refetch } = useAppData()
+  const auth = useCurrentUser()
+  const appData = useAppData(Boolean(auth.data))
+  const { data } = appData
   const queryClient = useQueryClient()
-  const isSignedIn = Boolean(data)
-  const isSignedOut = !data && isAuthenticationError(error)
+  const [forceSignedOut, setForceSignedOut] = useState(false)
+  const isSignedIn = Boolean(auth.data) && !forceSignedOut
+  const isSignedOut = forceSignedOut || (!auth.data && isAuthenticationError(auth.error))
   const currentPerson = data?.people[0]
   const currentPersonEntryCount =
     data && currentPerson
@@ -894,7 +898,9 @@ function SettingsPage() {
     setAuthMessage('')
     try {
       queryClient.removeQueries({ queryKey: ['app-data'] })
+      queryClient.removeQueries({ queryKey: ['current-user'] })
       await loginWithPassword(username, password)
+      setForceSignedOut(false)
       setAuthMessage('登录成功。')
       setProfileMessage('')
       setDisplayName('')
@@ -902,7 +908,10 @@ function SettingsPage() {
       setBirthDate('')
       setUsername('')
       setPassword('')
-      await queryClient.refetchQueries({ queryKey: ['app-data'] })
+      await Promise.all([
+        auth.refetch(),
+        appData.refetch(),
+      ])
     } catch (error) {
       setAuthMessage(error instanceof Error ? error.message : '登录失败')
     } finally {
@@ -915,6 +924,8 @@ function SettingsPage() {
     try {
       await logout().catch(() => undefined)
       queryClient.removeQueries({ queryKey: ['app-data'] })
+      queryClient.removeQueries({ queryKey: ['current-user'] })
+      setForceSignedOut(true)
       setAuthMessage('已退出登录。')
       setProfileMessage('')
       setDisplayName('')
@@ -963,7 +974,7 @@ function SettingsPage() {
       })
   }
 
-  if (isLoading) {
+  if (auth.isLoading || (isSignedIn && appData.isLoading)) {
     return (
       <ScreenLoading
         title="正在确认登录状态"
@@ -981,11 +992,42 @@ function SettingsPage() {
           </div>
           <p className="mt-5 font-display text-2xl font-semibold text-ink">暂时无法确认登录状态</p>
           <p className="mt-2 max-w-sm text-sm leading-6 text-sage">
-            {error instanceof Error ? error.message : '账号信息读取失败，请稍后重试。'}
+            {auth.error instanceof Error ? auth.error.message : '账号信息读取失败，请稍后重试。'}
           </p>
-          <Button type="button" className="mt-6" onClick={() => void refetch()}>
-            重新检查
-          </Button>
+          <div className="mt-6 grid w-full max-w-xs gap-2 sm:grid-cols-2">
+            <Button type="button" variant="secondary" onClick={() => void auth.refetch()}>
+              重新检查
+            </Button>
+            <Button type="button" onClick={() => void signOut()} disabled={isSigningOut}>
+              {isSigningOut ? <LoaderCircle className="animate-spin" size={16} /> : <LogOut size={16} />}
+              {isSigningOut ? '清除中' : '重新登录'}
+            </Button>
+          </div>
+        </div>
+      </Panel>
+    )
+  }
+
+  if (isSignedIn && (appData.error || !data)) {
+    return (
+      <Panel className="mx-auto max-w-xl">
+        <div className="flex min-h-72 flex-col items-center justify-center px-6 py-8 text-center">
+          <div className="flex size-12 items-center justify-center rounded-full bg-gold/20 text-amber-800">
+            <UserRoundCheck size={22} />
+          </div>
+          <p className="mt-5 font-display text-2xl font-semibold text-ink">账号已登录，资料暂未加载</p>
+          <p className="mt-2 max-w-sm text-sm leading-6 text-sage">
+            当前账号：{auth.data?.displayName || auth.data?.username}。你可以重试资料加载，或清除当前状态后改用其他账号登录。
+          </p>
+          <div className="mt-6 grid w-full max-w-xs gap-2 sm:grid-cols-2">
+            <Button type="button" variant="secondary" onClick={() => void appData.refetch()}>
+              重新加载
+            </Button>
+            <Button type="button" onClick={() => void signOut()} disabled={isSigningOut}>
+              {isSigningOut ? <LoaderCircle className="animate-spin" size={16} /> : <LogOut size={16} />}
+              {isSigningOut ? '清除中' : '切换账号'}
+            </Button>
+          </div>
         </div>
       </Panel>
     )
@@ -1005,7 +1047,7 @@ function SettingsPage() {
                 <UserRoundCheck size={18} />
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-ink">{currentPerson?.name ?? '已登录账号'}</p>
+                <p className="truncate text-sm font-semibold text-ink">{currentPerson?.name ?? auth.data?.displayName ?? auth.data?.username ?? '已登录账号'}</p>
                 <p className="text-xs text-sage">{currentPersonEntryCount} 条体重记录</p>
               </div>
             </div>
