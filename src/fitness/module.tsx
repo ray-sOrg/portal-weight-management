@@ -31,7 +31,6 @@ import {
 import { CSSProperties, FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
 import { Button, EmptyState, Input, Label, Panel } from '@/components/ui'
 import {
-  useActivateFitnessSet,
   useAddFitnessSet,
   useArchiveFitnessExercise,
   useActivateFitnessPlan,
@@ -72,6 +71,11 @@ import { cn } from '@/lib/utils'
 import { downloadCsv, downloadJson, exportFitnessHistoryCsv } from '@/lib/csv'
 import { FitnessTrendChart } from './trend-chart'
 import { findNextActionableSetId } from './workout-order'
+import {
+  exerciseUsesExternalWeight,
+  weightInputLabel,
+  weightRuleHint,
+} from './exercise-weight'
 
 const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
@@ -146,25 +150,6 @@ function readinessColor(score: number) {
 
 function effortGradient() {
   return 'linear-gradient(to right, #4f9b70 0%, #d0a23e 55%, #e05e50 100%)'
-}
-
-function exerciseUsesExternalWeight(exercise: FitnessSessionExercise) {
-  const equipment = exercise.equipment ?? ''
-  return ['杠铃', '哑铃', '壶铃', '臂力棒'].some((item) => equipment.includes(item))
-}
-
-function weightInputLabel(exercise: FitnessSessionExercise) {
-  const equipment = exercise.equipment ?? ''
-  if (equipment.includes('哑铃')) return '单只重量 kg'
-  if (equipment.includes('杠铃')) return '总重量 kg'
-  return '重量 kg'
-}
-
-function weightRuleHint(exercise: FitnessSessionExercise) {
-  const equipment = exercise.equipment ?? ''
-  if (equipment.includes('哑铃')) return '哑铃记录单只重量'
-  if (equipment.includes('杠铃')) return '杠铃记录含杆总重量'
-  return undefined
 }
 
 function FitnessShell({
@@ -285,7 +270,6 @@ export function FitnessTodayPage() {
   const saveFeedback = useSaveFitnessFeedback()
   const saveSet = useSaveFitnessSet()
   const deferSet = useDeferFitnessSet()
-  const activateSet = useActivateFitnessSet()
   const addSet = useAddFitnessSet()
   const restTimer = useRestTimer()
   const [celebration, setCelebration] = useState<FitnessSession | null>(null)
@@ -370,7 +354,6 @@ export function FitnessTodayPage() {
                     activeSetId={activeSetId}
                     savingSetId={saveSet.isPending ? saveSet.variables?.id : undefined}
                     deferringSetId={deferSet.isPending ? deferSet.variables : undefined}
-                    activatingSetId={activateSet.isPending ? activateSet.variables : undefined}
                     addingSet={addSet.isPending && addSet.variables === exercise.id}
                     canAddSet={session.status === 'in_progress'}
                     onAddSet={() => addSet.mutate(exercise.id)}
@@ -382,7 +365,6 @@ export function FitnessTodayPage() {
                       })
                     }
                     onDefer={(id) => deferSet.mutate(id)}
-                    onActivate={(id) => activateSet.mutate(id)}
                   />
                 ))}
               </div>
@@ -578,26 +560,22 @@ function WorkoutExerciseCard({
   activeSetId,
   savingSetId,
   deferringSetId,
-  activatingSetId,
   addingSet,
   canAddSet,
   onAddSet,
   onSave,
   onDefer,
-  onActivate,
 }: {
   exercise: FitnessSessionExercise
   index: number
   activeSetId?: number
   savingSetId?: number
   deferringSetId?: number
-  activatingSetId?: number
   addingSet: boolean
   canAddSet: boolean
   onAddSet: () => void
   onSave: (input: Parameters<ReturnType<typeof useSaveFitnessSet>['mutate']>[0], restSeconds: number | null) => void
   onDefer: (id: number) => void
-  onActivate: (id: number) => void
 }) {
   const [showDetails, setShowDetails] = useState(false)
   const previousSetByNumber = useMemo(
@@ -634,12 +612,9 @@ function WorkoutExerciseCard({
             previousSet={previousSetByNumber.get(fitnessSet.setNumber)}
             saving={savingSetId === fitnessSet.id}
             deferring={deferringSetId === fitnessSet.id}
-            activating={activatingSetId === fitnessSet.id}
             active={activeSetId === fitnessSet.id}
-            locked={!fitnessSet.completed && activeSetId !== fitnessSet.id}
             onSave={onSave}
             onDefer={onDefer}
-            onActivate={onActivate}
           />
         ))}
       </div>
@@ -656,18 +631,15 @@ function WorkoutExerciseCard({
   </>
 }
 
-function WorkoutSetRow({ fitnessSet, exercise, previousSet, saving, deferring, activating, active, locked, onSave, onDefer, onActivate }: {
+function WorkoutSetRow({ fitnessSet, exercise, previousSet, saving, deferring, active, onSave, onDefer }: {
   fitnessSet: FitnessSet
   exercise: FitnessSessionExercise
   previousSet?: FitnessSet
   saving: boolean
   deferring: boolean
-  activating: boolean
   active: boolean
-  locked: boolean
   onSave: (input: Parameters<ReturnType<typeof useSaveFitnessSet>['mutate']>[0], restSeconds: number | null) => void
   onDefer: (id: number) => void
-  onActivate: (id: number) => void
 }) {
   const [reps, setReps] = useState(() => String(fitnessSet.completed ? fitnessSet.actualReps ?? '' : fitnessSet.actualReps ?? previousSet?.actualReps ?? exercise.repsMin ?? ''))
   const [duration, setDuration] = useState(() => String(fitnessSet.completed ? fitnessSet.actualDurationSeconds ?? '' : fitnessSet.actualDurationSeconds ?? previousSet?.actualDurationSeconds ?? exercise.durationSecondsMin ?? ''))
@@ -713,7 +685,7 @@ function WorkoutSetRow({ fitnessSet, exercise, previousSet, saving, deferring, a
   }, exercise.restSeconds)
 
   return (
-    <div className={cn('relative grid gap-3 px-4 py-3 transition sm:grid-cols-[3rem_1fr_auto] sm:items-end', fitnessSet.completed && 'bg-mint/20', fitnessSet.deferredAt && !active && 'bg-amber-50/70', active && 'fitness-active-set bg-[#f2f9e4]', locked && !fitnessSet.deferredAt && 'opacity-55')}>
+    <div className={cn('relative grid gap-3 px-4 py-3 transition sm:grid-cols-[3rem_1fr_auto] sm:items-end', fitnessSet.completed && 'bg-mint/20', fitnessSet.deferredAt && !active && 'bg-amber-50/70', active && 'fitness-active-set bg-[#f2f9e4]')}>
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-wide text-sage">组</p>
         <div className="mt-1 flex items-center gap-2">
@@ -721,22 +693,22 @@ function WorkoutSetRow({ fitnessSet, exercise, previousSet, saving, deferring, a
           {active ? <span className="fitness-live-indicator" aria-label="当前正在进行"><span /><span /><span /></span> : null}
           {fitnessSet.deferredAt ? <span className="rounded-full bg-gold/25 px-1.5 py-0.5 text-[9px] font-semibold text-amber-800">{active ? '补做中' : '待补'}</span> : null}
         </div>
-        {locked ? <p className="mt-1 text-[9px] font-semibold text-sage">{fitnessSet.deferredAt ? '已跳过，可随时回来补' : '等待上一组'}</p> : null}
+        {fitnessSet.deferredAt && !active ? <p className="mt-1 text-[9px] font-semibold text-sage">已跳过，也可以直接完成</p> : null}
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {exercise.metricType === 'reps' ? <CompactInput label="次数" value={reps} onChange={setReps} disabled={locked || fitnessSet.completed} hint={previousSet?.actualReps != null ? `上次 ${previousSet.actualReps} 次` : undefined} /> : null}
-        {exercise.metricType === 'duration' ? <CompactInput label="秒" value={duration} onChange={setDuration} disabled={locked || fitnessSet.completed} hint={previousSet?.actualDurationSeconds != null ? `上次 ${previousSet.actualDurationSeconds} 秒` : undefined} /> : null}
-        {exerciseUsesExternalWeight(exercise) ? <CompactInput label={weightInputLabel(exercise)} value={weight} onChange={setWeight} step="0.5" disabled={locked || fitnessSet.completed} hint={previousSet?.actualWeightKg != null ? `上次 ${previousSet.actualWeightKg} kg` : weightRuleHint(exercise)} /> : null}
-        {exercise.rirMin !== null ? <CompactInput label="RIR（可选）" value={rir} onChange={setRir} disabled={locked || fitnessSet.completed} placeholder="不必填" hint="还能再做几次；0=力竭，2=还能做2次" /> : null}
+        {exercise.metricType === 'reps' ? <CompactInput label="次数" value={reps} onChange={setReps} disabled={fitnessSet.completed} hint={previousSet?.actualReps != null ? `上次 ${previousSet.actualReps} 次` : undefined} /> : null}
+        {exercise.metricType === 'duration' ? <CompactInput label="秒" value={duration} onChange={setDuration} disabled={fitnessSet.completed} hint={previousSet?.actualDurationSeconds != null ? `上次 ${previousSet.actualDurationSeconds} 秒` : undefined} /> : null}
+        {exerciseUsesExternalWeight(exercise) ? <CompactInput label={weightInputLabel(exercise)} value={weight} onChange={setWeight} step="0.5" disabled={fitnessSet.completed} hint={previousSet?.actualWeightKg != null ? `上次 ${previousSet.actualWeightKg} kg` : weightRuleHint(exercise)} /> : null}
+        {exercise.rirMin !== null ? <CompactInput label="RIR（可选）" value={rir} onChange={setRir} disabled={fitnessSet.completed} placeholder="不必填" hint="还能再做几次；0=力竭，2=还能做2次" /> : null}
         {exercise.metricType === 'duration' ? (
           <div className="col-span-2 sm:col-span-3">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-sage">本组计时</p>
             <div className="mt-1 flex items-center gap-2">
               <span className="min-w-14 font-display text-lg font-semibold tabular-nums text-ink">{formatClock(elapsedSeconds)}</span>
-              <button type="button" onClick={toggleDurationTimer} disabled={locked || fitnessSet.completed} className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#13251f] px-2.5 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-35">
+              <button type="button" onClick={toggleDurationTimer} disabled={fitnessSet.completed} className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#13251f] px-2.5 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-35">
                 {timerStartedAt === null ? <Play size={12} /> : <Pause size={12} />}{timerStartedAt === null ? '开始' : '暂停'}
               </button>
-              {elapsedSeconds > 0 ? <button type="button" onClick={resetDurationTimer} disabled={locked || fitnessSet.completed} className="h-8 rounded-lg bg-mist px-2.5 text-[10px] font-semibold text-sage-dark disabled:opacity-35">归零</button> : null}
+              {elapsedSeconds > 0 ? <button type="button" onClick={resetDurationTimer} disabled={fitnessSet.completed} className="h-8 rounded-lg bg-mist px-2.5 text-[10px] font-semibold text-sage-dark disabled:opacity-35">归零</button> : null}
             </div>
           </div>
         ) : null}
@@ -747,27 +719,19 @@ function WorkoutSetRow({ fitnessSet, exercise, previousSet, saving, deferring, a
             {deferring ? <LoaderCircle className="animate-spin" size={15} /> : <SkipForward size={15} />}{deferring ? '跳过中' : '暂时跳过'}
           </Button>
         ) : null}
-        {locked && fitnessSet.deferredAt ? (
-          <Button type="button" variant="secondary" className="w-full border-amber-300 bg-amber-50 px-2 text-amber-900 hover:bg-amber-100" onClick={() => onActivate(fitnessSet.id)} disabled={activating || saving || deferring}>
-            {activating ? <><LoaderCircle className="animate-spin" size={16} />切换中</> : <><Play size={16} />现在补</>}
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            variant={fitnessSet.completed ? 'secondary' : 'primary'}
-            className="w-full px-2"
-            onClick={toggleSet}
-            disabled={saving || deferring || activating || locked}
-          >
-            {saving
-              ? <><LoaderCircle className="animate-spin" size={16} />处理中</>
-              : locked
-                ? <><Clock3 size={16} />待解锁</>
-                : fitnessSet.completed
-                  ? <><Pause size={16} />撤销完成</>
-                  : <><Check size={16} />完成</>}
-          </Button>
-        )}
+        <Button
+          type="button"
+          variant={fitnessSet.completed ? 'secondary' : 'primary'}
+          className="w-full px-2"
+          onClick={toggleSet}
+          disabled={saving || deferring}
+        >
+          {saving
+            ? <><LoaderCircle className="animate-spin" size={16} />处理中</>
+            : fitnessSet.completed
+              ? <><Pause size={16} />撤销完成</>
+              : <><Check size={16} />完成</>}
+        </Button>
       </div>
     </div>
   )
