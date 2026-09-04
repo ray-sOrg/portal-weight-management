@@ -60,6 +60,7 @@ import {
   isAuthenticationError,
   loginWithPassword,
   logout,
+  unifiedLoginUrl,
   updateProfile,
 } from './lib/server-api'
 import type { FitnessPlanDay, FitnessSession, FitnessSessionSummary, TrackedPerson } from './lib/types'
@@ -1057,7 +1058,20 @@ function SettingsPage() {
             </Button>
           </div>
         ) : (
-          <form className="mt-5 grid gap-3" onSubmit={signIn}>
+          <div className="mt-5 grid gap-3">
+            <Button
+              type="button"
+              onClick={() => window.location.assign(unifiedLoginUrl('weight'))}
+            >
+              <LogIn size={16} />
+              使用统一账号登录
+            </Button>
+            <div className="flex items-center gap-3 py-1 text-xs text-sage">
+              <span className="h-px flex-1 bg-line" />
+              迁移期间旧账号登录
+              <span className="h-px flex-1 bg-line" />
+            </div>
+            <form className="grid gap-3" onSubmit={signIn}>
             <Input
               autoComplete="username"
               disabled={isSigningIn}
@@ -1075,9 +1089,10 @@ function SettingsPage() {
             />
             <Button type="submit" disabled={!username || !password || isSigningIn}>
               {isSigningIn ? <LoaderCircle className="animate-spin" size={16} /> : <LogIn size={16} />}
-              {isSigningIn ? '登录中...' : '登录'}
+              {isSigningIn ? '登录中...' : '使用旧账号登录'}
             </Button>
-          </form>
+            </form>
+          </div>
         )}
         {authMessage ? <p className="mt-3 text-sm text-sage-dark">{authMessage}</p> : null}
       </Panel>

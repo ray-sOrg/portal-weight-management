@@ -114,6 +114,10 @@ export async function loginWithPassword(username: string, password: string) {
   })
 }
 
+export function unifiedLoginUrl(app: 'console' | 'weight') {
+  return `${apiBaseUrl}/api/auth/oidc/login?app=${encodeURIComponent(app)}`
+}
+
 export async function logout() {
   return request<Record<string, never>>('/api/auth/logout', {
     method: 'POST',
