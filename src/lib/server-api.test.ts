@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   getCurrentUser,
   isAuthenticationError,
+  logout,
 } from './server-api'
 
 
@@ -22,6 +23,17 @@ const TEST_USER = {
 
 
 describe('silent authentication refresh', () => {
+  it('sends the refresh CSRF token for browser-wide logout and returns the provider URL', async () => {
+    document.cookie = 'csrf_refresh_token=logout-csrf; path=/'
+    const logoutUrl = 'https://auth.tt829.cn/realms/tt829/protocol/openid-connect/logout'
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toContain('/api/auth/logout?unified=1&app=weight')
+      expect(init?.credentials).toBe('include')
+      expect((init?.headers as Record<string, string>)['X-CSRF-TOKEN']).toBe('logout-csrf')
+      return apiResponse(200, {logoutUrl})
+    }))
+    expect(await logout()).toEqual({logoutUrl})
+  })
   afterEach(() => {
     vi.unstubAllGlobals()
     document.cookie = 'csrf_refresh_token=; Max-Age=0; path=/'
