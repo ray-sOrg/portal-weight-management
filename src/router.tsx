@@ -28,6 +28,7 @@ import {
   Users,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
+import { SilentSso } from './components/silent-sso'
 import { FormEvent, type ReactNode, useMemo, useState } from 'react'
 import { BmiChart, HouseholdCompareChart, WeightTrendChart } from './components/charts'
 import { Button, EmptyState, Input, Label, Panel } from './components/ui'
@@ -187,8 +188,10 @@ const navItems = [
 ] as const
 
 function RootLayout() {
+  const auth = useCurrentUser()
   return (
     <div className="min-h-screen">
+      <SilentSso loginUrl={unifiedLoginUrl('weight') + '&silent=1'} resultOrigin="https://api.tt829.cn" enabled={isAuthenticationError(auth.error)} />
       <header className="sticky top-0 z-20 border-b border-line/80 bg-mist/88 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5 sm:px-6 md:py-3 lg:px-8">
           <Link to="/" className="flex items-center gap-2.5 md:gap-3">

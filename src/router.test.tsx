@@ -6,6 +6,7 @@ import { router } from './router'
 import { getCurrentUser, loadFitnessBootstrap, loadWeightAppData } from './lib/server-api'
 
 vi.mock('./lib/server-api', () => ({
+  unifiedLoginUrl: () => 'https://api.tt829.cn/api/auth/oidc/login?app=weight',
   addServerWeightEntry: vi.fn(),
   createServerTrackedPerson: vi.fn(),
   getCurrentUser: vi.fn(() => Promise.reject(new Error('未登录'))),
