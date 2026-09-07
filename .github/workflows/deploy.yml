@@ -43,10 +43,25 @@ jobs:
           echo "tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
           echo "Image: $IMAGE_NAME:$IMAGE_TAG"
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.10'
+
+      - name: Build and test static application
+        run: |
+          bun install --frozen-lockfile
+          bun run lint
+          bun run typecheck
+          bun run test
+          bun run build
+          test -s dist/index.html
+
       - name: Package deployment source
         id: source
         run: |
-          git archive --format=tar.gz --output "$RUNNER_TEMP/deployment-source.tar.gz" HEAD
+          git archive --format=tar --output "$RUNNER_TEMP/deployment-source.tar" HEAD
+          tar -rf "$RUNNER_TEMP/deployment-source.tar" dist
+          gzip "$RUNNER_TEMP/deployment-source.tar"
           (
             cd "$RUNNER_TEMP"
             sha256sum deployment-source.tar.gz > deployment-source.tar.gz.sha256

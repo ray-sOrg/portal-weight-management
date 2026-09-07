@@ -119,7 +119,7 @@ export function unifiedLoginUrl(app: 'console' | 'weight') {
 }
 
 export async function logout() {
-  return request<Record<string, never>>('/api/auth/logout', {
+  return request<{logoutUrl: string}>('/api/auth/logout?unified=1&app=weight', {
     method: 'POST',
   })
 }
@@ -507,6 +507,7 @@ async function sendRequest<T>(path: string, init: RequestInit = {}, timeoutMs = 
 }
 
 function getCsrfToken(path: string, method = 'GET') {
+  path = path.split('?')[0]
   const normalizedMethod = method.toUpperCase()
   if (normalizedMethod === 'GET' || normalizedMethod === 'HEAD') return ''
   if (path === '/api/auth/token/refresh' || path === '/api/auth/logout') {

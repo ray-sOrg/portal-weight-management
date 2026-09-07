@@ -923,7 +923,7 @@ function SettingsPage() {
   async function signOut() {
     setIsSigningOut(true)
     try {
-      await logout().catch(() => undefined)
+      const result = await logout()
       queryClient.removeQueries({ queryKey: ['app-data'] })
       queryClient.removeQueries({ queryKey: ['current-user'] })
       setForceSignedOut(true)
@@ -932,6 +932,9 @@ function SettingsPage() {
       setDisplayName('')
       setHeightCm('')
       setBirthDate('')
+      window.location.assign(result.logoutUrl)
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : '退出失败，请重试')
     } finally {
       setIsSigningOut(false)
     }
