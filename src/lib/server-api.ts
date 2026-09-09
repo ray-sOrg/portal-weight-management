@@ -107,13 +107,6 @@ export async function getCurrentUser() {
   return request<ServerUser>('/api/user/login/info')
 }
 
-export async function loginWithPassword(username: string, password: string) {
-  return request<ServerUser>('/api/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ username, password }),
-  })
-}
-
 export function unifiedLoginUrl(app: 'console' | 'weight') {
   return `${apiBaseUrl}/api/auth/oidc/login?app=${encodeURIComponent(app)}`
 }

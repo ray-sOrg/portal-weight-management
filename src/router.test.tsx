@@ -16,7 +16,6 @@ vi.mock('./lib/server-api', () => ({
   isAuthenticationError: vi.fn(
     (error: unknown) => error instanceof Error && error.message === '未登录',
   ),
-  loginWithPassword: vi.fn(),
   logout: vi.fn(async () => ({})),
   updateProfile: vi.fn(),
 }))
@@ -63,7 +62,7 @@ describe('router app shell', () => {
     expect(screen.queryByPlaceholderText('密码')).not.toBeInTheDocument()
   })
 
-  it('shows the settings login form after authentication is confirmed missing', async () => {
+  it('offers only unified login after authentication is confirmed missing', async () => {
     await router.navigate({ to: '/settings' })
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -75,8 +74,9 @@ describe('router app shell', () => {
       </QueryClientProvider>,
     )
 
-    expect(await screen.findByPlaceholderText('用户名')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('密码')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '使用统一账号登录' })).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('用户名')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('密码')).not.toBeInTheDocument()
   })
 
   it('offers a way to clear an unknown stale login state', async () => {
@@ -93,8 +93,9 @@ describe('router app shell', () => {
     )
 
     fireEvent.click(await screen.findByRole('button', { name: /重新登录/ }))
-    expect(await screen.findByPlaceholderText('用户名')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('密码')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '使用统一账号登录' })).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('用户名')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('密码')).not.toBeInTheDocument()
   })
 
   it('opens exercise create and detail forms in dialogs', async () => {

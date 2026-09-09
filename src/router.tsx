@@ -59,7 +59,6 @@ import {
 } from './lib/queries'
 import {
   isAuthenticationError,
-  loginWithPassword,
   logout,
   unifiedLoginUrl,
   updateProfile,
@@ -870,14 +869,11 @@ function SettingsPage() {
         : [],
     [data, currentPerson],
   )
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [heightCm, setHeightCm] = useState('')
   const [birthDate, setBirthDate] = useState('')
   const [authMessage, setAuthMessage] = useState('')
   const [profileMessage, setProfileMessage] = useState('')
-  const [isSigningIn, setIsSigningIn] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const effectiveHeightCm = heightCm || String(currentPerson?.height_cm ?? 170)
@@ -895,33 +891,6 @@ function SettingsPage() {
     () => (data ? exportBackupJson(data) : ''),
     [data],
   )
-
-  async function signIn(event: FormEvent) {
-    event.preventDefault()
-    setIsSigningIn(true)
-    setAuthMessage('')
-    try {
-      queryClient.removeQueries({ queryKey: ['app-data'] })
-      queryClient.removeQueries({ queryKey: ['current-user'] })
-      await loginWithPassword(username, password)
-      setForceSignedOut(false)
-      setAuthMessage('登录成功。')
-      setProfileMessage('')
-      setDisplayName('')
-      setHeightCm('')
-      setBirthDate('')
-      setUsername('')
-      setPassword('')
-      await Promise.all([
-        auth.refetch(),
-        appData.refetch(),
-      ])
-    } catch (error) {
-      setAuthMessage(error instanceof Error ? error.message : '登录失败')
-    } finally {
-      setIsSigningIn(false)
-    }
-  }
 
   async function signOut() {
     setIsSigningOut(true)
@@ -1065,6 +1034,9 @@ function SettingsPage() {
           </div>
         ) : (
           <div className="mt-5 grid gap-3">
+            <p className="text-sm leading-6 text-sage">
+              Weight 仅使用 TT829 统一账号，不再支持独立用户名和密码登录。
+            </p>
             <Button
               type="button"
               onClick={() => window.location.assign(unifiedLoginUrl('weight'))}
@@ -1072,32 +1044,6 @@ function SettingsPage() {
               <LogIn size={16} />
               使用统一账号登录
             </Button>
-            <div className="flex items-center gap-3 py-1 text-xs text-sage">
-              <span className="h-px flex-1 bg-line" />
-              迁移期间旧账号登录
-              <span className="h-px flex-1 bg-line" />
-            </div>
-            <form className="grid gap-3" onSubmit={signIn}>
-            <Input
-              autoComplete="username"
-              disabled={isSigningIn}
-              placeholder="用户名"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-            />
-            <Input
-              autoComplete="current-password"
-              disabled={isSigningIn}
-              placeholder="密码"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-            <Button type="submit" disabled={!username || !password || isSigningIn}>
-              {isSigningIn ? <LoaderCircle className="animate-spin" size={16} /> : <LogIn size={16} />}
-              {isSigningIn ? '登录中...' : '使用旧账号登录'}
-            </Button>
-            </form>
           </div>
         )}
         {authMessage ? <p className="mt-3 text-sm text-sage-dark">{authMessage}</p> : null}
