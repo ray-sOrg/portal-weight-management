@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   getCurrentUser,
+  loadFitnessBootstrap,
   isAuthenticationError,
   logout,
 } from './server-api'
@@ -108,5 +109,29 @@ describe('silent authentication refresh', () => {
 
     expect(isAuthenticationError(error)).toBe(true)
     expect(logoutCalls).toBe(1)
+  })
+})
+
+
+describe('fitness request timeout', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('allows a slow fitness response beyond the old eight second deadline', async () => {
+    vi.useFakeTimers()
+    let signal: AbortSignal | null | undefined
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal
+      return new Promise<Response>((resolve) => {
+        setTimeout(() => resolve(apiResponse(200, { plans: [] })), 10_000)
+      })
+    }))
+    const pending = loadFitnessBootstrap()
+    await vi.advanceTimersByTimeAsync(9_000)
+    expect(signal?.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1_000)
+    await expect(pending).resolves.toEqual({ plans: [] })
   })
 })

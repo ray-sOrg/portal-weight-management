@@ -410,7 +410,8 @@ function parseServerTrackedPersonId(trackedPersonId: string) {
 }
 
 async function request<T>(path: string, init: RequestInit = {}, options: RequestOptions = {}) {
-  const payload = await sendRequest<T>(path, init, options.timeoutMs)
+  const timeoutMs = options.timeoutMs ?? (path.startsWith('/api/fitness/') ? 30_000 : undefined)
+  const payload = await sendRequest<T>(path, init, timeoutMs)
   if (REFRESHABLE_AUTH_CODES.has(payload.code) && !options.skipAuthRefresh) {
     try {
       await refreshAccessToken()
@@ -418,7 +419,7 @@ async function request<T>(path: string, init: RequestInit = {}, options: Request
       if (isAuthenticationError(error)) await clearStaleSessionCookies()
       throw error
     }
-    const retryPayload = await sendRequest<T>(path, init, options.timeoutMs)
+    const retryPayload = await sendRequest<T>(path, init, timeoutMs)
     if (retryPayload.code !== 200) {
       const error = new ApiRequestError(
         retryPayload.code,
